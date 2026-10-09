@@ -4,9 +4,9 @@ import {
 } from './engine.js';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { KEY, addKey, keyGrid, flushKeys, randomLetter, letterIndex, dynamicKeys, tickKeys } from './keys.js';
-import { decor, flushDecor, candyModel, buildShoe, buildItem, FROSTING, SCOOPS, PASTELS } from './candy.js';
-import { arrowBeltTexture, chocoRiverTexture, beamTexture, woodTexture, scrolling } from './textures.js';
+import { KEY, addKey, addWallKey, keyGrid, flushKeys, randomLetter, letterIndex, dynamicKeys, tickKeys } from './keys.js';
+import { decor, flushDecor, candyModel, buildShoe, buildItem, FROSTING, SCOOPS, PASTELS, TROPHY_GEO, GOLD } from './candy.js';
+import { arrowBeltTexture, chocoRiverTexture, beamTexture, woodTexture, stripeTexture, scrolling } from './textures.js';
 import { emitTread } from './fx.js';
 import { S, actions, net } from './state.js';
 import {
@@ -184,34 +184,67 @@ function canvasPlane(zone, w, h, pxW, pxH, pos, face) {
     return { cv, tex, m };
 }
 
-// ----- candy scattered on walls -----
+// ----- candy on the walls, laid out like the reference: the lower wall stays clean, above it a
+// staggered grid of sweets, every one upright (or face-on) and facing into the corridor -----
 const DECO_SETS = {
-    sweets: [['donut', FROSTING], ['icecream', SCOOPS], ['lolliPink'], ['lolliRainbow'], ['mintRed'], ['macaron', PASTELS], ['cupcake', FROSTING], ['bonbon', PASTELS]],
-    bubble: [['gumball', PASTELS], ['bonbon', [0x8ad8ff, 0xff8ad0]], ['lolliBlue'], ['donut', [0x8ad8ff, 0xffffff, 0xff8ad0]], ['macaron', [0x8ad8ff, 0xffd0f0]]],
-    mint: [['mintGreen'], ['macaron', [0xb8ffd8, 0xffd0e8]], ['cupcake', [0xb8ffd8, 0xffffff]], ['donut', [0xffffff, 0xb8ffd8]], ['gumdrop', [0x7affb8, 0xffffff]]],
-    choco: [['chocobar'], ['cookie'], ['donut', [0x7a4022, 0x5a2e14, 0xffe8cc]], ['icecream', [0x9a5a32, 0xfff4e0]], ['waffle']],
-    neon: [['gumball', [0xff3ad8, 0x3affd8, 0x8a5aff]], ['lolliRainbow'], ['bonbon', [0xff3ad8, 0x3ad8ff]], ['gumdrop', [0xff5ad8, 0x5affe6]]],
-    citrus: [['gumdrop', [0xffa84a, 0xffe05a, 0xff7a3a]], ['lolliRainbow'], ['bonbon', [0xffd028, 0xff8a3a]], ['icecream', [0xffe08a, 0xffb08a]], ['donut', [0xffe08a, 0xffb84a]]],
-    gumball: [['gumball', [0xff5a7a, 0x5ac8ff, 0xffe05a, 0x7aff8a, 0xb88aff, 0xffffff]]],
-    frost: [['icecream', [0xffffff, 0xc8eaff]], ['donut', [0xffffff, 0xc8eaff]], ['mintBlue'], ['macaron', [0xc8eaff, 0xffffff]]],
-    peppermint: [['mintRed'], ['cane'], ['lolliPink'], ['bonbon', [0xff3a50, 0xffffff]]],
-    tech: [['bonbon', [0x5ad0ff, 0xc8ccd8]], ['gumball', [0x5ad0ff, 0xffffff, 0x8a8ea0]], ['cookie']],
-    jelly: [['gumdrop', [0xa8ff5a, 0xff8ae0, 0xffe05a, 0x5ae0ff]], ['gumball', [0xa8ff5a, 0xff8ae0]], ['bonbon', [0xc89aff, 0xa8ff5a]]],
-    storm: [['cloud', [0x8a9ad8, 0xc8d0ff]], ['lolliBlue'], ['gumball', [0x7ad8ff, 0x5a6aa8]]],
-    rainbow: [['lolliRainbow'], ['donut', FROSTING], ['gumball', PASTELS], ['icecream', SCOOPS], ['macaron', PASTELS], ['cupcake', FROSTING]],
+    sweets: [['icecream', SCOOPS], ['donut', FROSTING], ['mintRed'], ['icecream', SCOOPS], ['lolliPink'], ['donut', FROSTING], ['macaron', PASTELS], ['mintRed'], ['cupcake', FROSTING], ['lolliRainbow']],
+    bubble: [['gumball', PASTELS], ['donut', [0x8ad8ff, 0xffffff, 0xff8ad0]], ['lolliBlue'], ['macaron', [0x8ad8ff, 0xffd0f0]], ['bonbon', [0x8ad8ff, 0xff8ad0]], ['icecream', [0xc8eaff, 0xffc8e0]]],
+    mint: [['mintGreen'], ['cupcake', [0xb8ffd8, 0xffffff]], ['macaron', [0xb8ffd8, 0xffd0e8]], ['donut', [0xffffff, 0xb8ffd8]], ['gumdrop', [0x7affb8, 0xffffff]], ['icecream', [0xb8f0d0, 0xffffff]]],
+    choco: [['cookie'], ['icecream', [0x9a5a32, 0xfff4e0]], ['donut', [0x7a4022, 0x5a2e14, 0xffe8cc]], ['waffle'], ['chocobar'], ['icecream', [0x9a5a32, 0xffc8e0]]],
+    neon: [['gumball', [0xff3ad8, 0x3affd8, 0x8a5aff]], ['lolliRainbow'], ['bonbon', [0xff3ad8, 0x3ad8ff]], ['gumdrop', [0xff5ad8, 0x5affe6]], ['donut', [0xff3ad8, 0x8a5aff]]],
+    citrus: [['gumdrop', [0xffa84a, 0xffe05a, 0xff7a3a]], ['icecream', [0xffe08a, 0xffb08a]], ['lolliRainbow'], ['donut', [0xffe08a, 0xffb84a]], ['bonbon', [0xffd028, 0xff8a3a]]],
+    gumball: [['gumball', [0xff5a7a, 0x5ac8ff, 0xffe05a, 0x7aff8a, 0xb88aff, 0xffffff]], ['bonbon', [0xff5a7a, 0x5ac8ff]], ['gumball', [0xffe05a, 0x7aff8a, 0xb88aff]], ['lolliBlue']],
+    frost: [['icecream', [0xffffff, 0xc8eaff]], ['donut', [0xffffff, 0xc8eaff]], ['mintBlue'], ['macaron', [0xc8eaff, 0xffffff]], ['cupcake', [0xffffff, 0xc8eaff]]],
+    peppermint: [['mintRed'], ['cane'], ['lolliPink'], ['mintRed'], ['bonbon', [0xff3a50, 0xffffff]], ['donut', [0xffffff, 0xff8a96]]],
+    tech: [['bonbon', [0x5ad0ff, 0xc8ccd8]], ['gumball', [0x5ad0ff, 0xffffff, 0x8a8ea0]], ['cookie'], ['donut', [0xc8ccd8, 0x5ad0ff]]],
+    jelly: [['gumdrop', [0xa8ff5a, 0xff8ae0, 0xffe05a, 0x5ae0ff]], ['gumball', [0xa8ff5a, 0xff8ae0]], ['bonbon', [0xc89aff, 0xa8ff5a]], ['donut', [0xa8ff5a, 0xff8ae0]]],
+    storm: [['lolliBlue'], ['gumball', [0x7ad8ff, 0x5a6aa8]], ['donut', [0xc8d0ff, 0x8a9ad8]], ['mintBlue']],
+    rainbow: [['lolliRainbow'], ['donut', FROSTING], ['icecream', SCOOPS], ['gumball', PASTELS], ['macaron', PASTELS], ['cupcake', FROSTING]],
 };
-function wallCandy(zone, set, side, z0, z1, y0, y1, rng, density) {
+// Per type: base size and how far its centre sits out from the wall
+const CANDY_FIT = {
+    icecream: [1.05, 1.0], donut: [1.45, 0.42], mintRed: [1.55, 0.4], mintGreen: [1.55, 0.4], mintBlue: [1.55, 0.4],
+    lolliPink: [1.3, 0.32], lolliRainbow: [1.3, 0.32], lolliBlue: [1.3, 0.32], macaron: [1.45, 1.4], cupcake: [1.3, 1.1],
+    bonbon: [1.35, 0.95], gumball: [1.4, 1.35], gumdrop: [1.4, 1.2], cookie: [1.45, 0.3], waffle: [1.3, 0.3], chocobar: [1.15, 0.3],
+    cane: [0.95, 0.35], cloud: [2.2, 2.4],
+};
+// One sweet on a wall: (px, py, pz) on the wall face, facing yaw `face` (atan2 of the wall normal)
+function wallSweet(zone, type, px, py, pz, face, tint, scale) {
+    const [s0, out] = CANDY_FIT[type] || [1.3, 1];
+    const s = s0 * (scale || 1), nx = Math.sin(face), nz = Math.cos(face);
+    let rx = 0;
+    // Built facing +z, then turned to face: flat sweets show their face, tilted a little down
+    // toward the players; standing sweets lean out a touch
+    if (type === 'donut' || type === 'cookie' || type === 'waffle' || type === 'chocobar') rx = Math.PI / 2 + 0.3;
+    else if (!/^lolli|^mint|bonbon|cane/.test(type)) rx = 0.2;
+    decor(zone, type, px + nx * out * s, py, pz + nz * out * s, rx, 0, 0, s, tint, face);
+}
+// A staggered grid of sweets along a side wall (side +1: the wall at +x) from lift above the floor
+function candyWall(zone, set, side, z0, z1, floorAt, lift, rows, rng, o) {
+    o = o || {};
     const list = DECO_SETS[set] || DECO_SETS.sweets;
-    const area = (z1 - z0) * (y1 - y0);
-    const n = Math.min(200, Math.floor(area / (density || 70)));
-    for (let k = 0; k < n; k++) {
-        const z = z0 + rng() * (z1 - z0), y = y0 + rng() * (y1 - y0);
-        const [type, pal] = list[Math.floor(rng() * list.length)];
-        const s = 1.3 + rng() * 1.5;
-        const x = side * (HW - 0.4 - s * 0.6);
-        // Lie on the wall: flat things face out of it, cones point down-ish
-        const flat = type === 'donut' || type === 'cookie' || type === 'waffle' || type === 'chocobar';
-        decor(zone, type, x, y, z, flat ? 0 : (rng() - 0.5) * 0.6, side > 0 ? -Math.PI / 2 : Math.PI / 2, flat ? side * Math.PI / 2 : (rng() - 0.5) * 0.8, s, pal ? pal[Math.floor(rng() * pal.length)] : undefined);
+    const colGap = o.colGap || 7.6, rowGap = o.rowGap || 6.6, face = side > 0 ? -Math.PI / 2 : Math.PI / 2;
+    for (let r = 0; r < rows; r++) {
+        let c = 0;
+        for (let z = z0 + colGap / 2 + (r % 2 ? colGap / 2 : 0); z < z1 - colGap / 4; z += colGap, c++) {
+            const [type, pal] = list[(c + r * 3) % list.length];
+            const y = floorAt(z) + lift + r * rowGap + (rng() - 0.5) * 0.5;
+            wallSweet(zone, type, side * (o.wallX || HW), y, z + (rng() - 0.5) * 0.6, face, pal ? pal[(c * 2 + r) % pal.length] : undefined);
+        }
+    }
+}
+// The same along a wall across x (dir +1: faces +z)
+function candyWallX(zone, set, faceZ, dir, x0, x1, y0, rows, rng, o) {
+    o = o || {};
+    const list = DECO_SETS[set] || DECO_SETS.sweets;
+    const colGap = o.colGap || 7.6, rowGap = o.rowGap || 6.6, face = dir > 0 ? 0 : Math.PI;
+    for (let r = 0; r < rows; r++) {
+        let c = 0;
+        for (let x = x0 + colGap / 2 + (r % 2 ? colGap / 2 : 0); x < x1 - colGap / 4; x += colGap, c++) {
+            if (o.skip && o.skip(x)) continue;
+            const [type, pal] = list[(c + r * 3) % list.length];
+            wallSweet(zone, type, x + (rng() - 0.5) * 0.6, y0 + r * rowGap + (rng() - 0.5) * 0.5, faceZ, face, pal ? pal[(c * 2 + r) % pal.length] : undefined, o.scale);
+        }
     }
 }
 function clouds(zone, n, x0, x1, y0, y1, z0, z1, rng, tints) {
@@ -265,26 +298,29 @@ function buildLobby() {
     for (const s of [-1, 1]) roundBox(Z, 2.6, 40, 3, s * (HW + 1.3), 20, LZ1 - 0.2, candy(trim, { rough: 0.3 }), 0.6);
     roundBox(Z, HW * 2 + 5.2, 2.6, 3, 0, 40, LZ1 - 0.2, candy(trim, { rough: 0.3 }), 0.6);
     banner(Z, '😊 STAGE 1 😊', ['#ffffff', '#ffe36b'], 34, new V3(0, 47, LZ1 - 0.6), new V3(0, 0, -1));
-    // Candy all over the walls
-    for (const [side, set] of [[1, 'sweets'], [-1, 'sweets']]) {
-        const r2 = rngFrom(side > 0 ? 21 : 22);
-        for (let k = 0; k < 70; k++) {
-            const z = LZ0 + 6 + r2() * (LZ1 - LZ0 - 12), y = 10 + r2() * 30;
-            const list = DECO_SETS[set];
-            const [type, pal] = list[Math.floor(r2() * list.length)];
-            const s = 1.6 + r2() * 1.6, flat = type === 'donut' || type === 'cookie';
-            decor(Z, type, side * (LX - 0.6 - s * 0.6), y, z, flat ? 0 : 0, side > 0 ? -Math.PI / 2 : Math.PI / 2, flat ? side * Math.PI / 2 : (r2() - 0.5) * 0.6, s, pal ? pal[Math.floor(r2() * pal.length)] : undefined);
+    // Candy on the pink half's walls: neat staggered rows above head height, facing in (reference)
+    const flat0 = () => 0;
+    for (const side of [-1, 1]) candyWall(Z, 'sweets', side, -30, LZ1 - 2, flat0, 13, 4, rngFrom(side > 0 ? 21 : 22), { wallX: LX });
+    candyWallX(Z, 'sweets', LZ1, -1, -LX + 2, LX - 2, 13, 4, rngFrom(25), { skip: (x) => Math.abs(x) < HW + 4 });
+    // The chocolate half: small sweets floating in even rows in front of the lattice (reference)
+    {
+        const fl = rngFrom(31), set = DECO_SETS.choco;
+        for (let r = 0; r < 4; r++) {
+            const y = 15 + r * 6.5;
+            let c = 0;
+            for (let x = -LX + 7 + (r % 2) * 5; x < LX - 6; x += 10, c++) {
+                if ((x > 28 && y > 26) || (x < -40 && y > 23)) continue;
+                const [type, pal] = set[(c + r * 2) % set.length];
+                wallSweet(Z, type, x, y + (fl() - 0.5) * 0.8, LZ0 + 4.5, 0, pal ? pal[c % pal.length] : undefined, 0.72);
+            }
+            for (const side of [-1, 1]) {
+                c = 0;
+                for (let z = LZ0 + 12 + (r % 2) * 5; z < -36; z += 10, c++) {
+                    const [type, pal] = set[(c + r * 2 + 1) % set.length];
+                    wallSweet(Z, type, side * (LX - 4.5), y + (fl() - 0.5) * 0.8, z, side > 0 ? -Math.PI / 2 : Math.PI / 2, pal ? pal[c % pal.length] : undefined, 0.72);
+                }
+            }
         }
-    }
-    for (let k = 0; k < 40; k++) {
-        const r2 = rng, x = -LX + 6 + r2() * (LX * 2 - 12), y = 10 + r2() * 30;
-        const [type, pal] = DECO_SETS.choco[Math.floor(r2() * DECO_SETS.choco.length)];
-        decor(Z, type, x, y, LZ0 + 0.6 + 1.2, type === 'donut' || type === 'cookie' || type === 'waffle' || type === 'chocobar' ? Math.PI / 2 : 0, 0, 0, 1.8 + r2() * 1.4, pal ? pal[Math.floor(r2() * pal.length)] : undefined);
-    }
-    for (let k = 0; k < 30; k++) {
-        const x = (rng() < 0.5 ? -1 : 1) * (HW + 6 + rng() * (LX - HW - 12)), y = 8 + rng() * 32;
-        const [type, pal] = DECO_SETS.sweets[Math.floor(rng() * DECO_SETS.sweets.length)];
-        decor(Z, type, x, y, LZ1 - 0.6 - 1.2, type === 'donut' ? Math.PI / 2 : 0, Math.PI, 0, 1.8 + rng() * 1.4, pal ? pal[Math.floor(rng() * pal.length)] : undefined);
     }
     // Wooden lattice over the chocolate half (big X beams, as in the reference)
     const woodM = candy(0xffffff, { rough: 0.75 }); woodM.map = woodTexture(); woodM.map.repeat.set(1, 6);
@@ -297,24 +333,9 @@ function buildLobby() {
     for (const s of [-1, 1]) for (let z = LZ0 + 16; z < -34; z += 28) latticeAt(s * (LX - 2.2), z, Math.PI / 2, 26, 30);
     // Overhead beams across the chocolate half
     for (let z = LZ0 + 14; z < -30; z += 26) plainBox(Z, LX * 2, 1.8, 1.8, 0, 42, z, woodM);
-    // Floating sweets and cotton-candy clouds over the chocolate half; clouds over the plaza
-    {
-        const fl = rngFrom(31);
-        for (let k = 0; k < 34; k++) {
-            const types = ['cookie', 'waffle', 'chocobar', 'icecream', 'donut', 'macaron', 'bonbon'];
-            const type = types[Math.floor(fl() * types.length)];
-            const pal = type === 'donut' ? FROSTING : type === 'icecream' ? SCOOPS : PASTELS;
-            const m = candyModel(type, pal[Math.floor(fl() * pal.length)]);
-            m.position.set(-LX + 10 + fl() * (LX * 2 - 20), 16 + fl() * 22, LZ0 + 8 + fl() * 66);
-            m.rotation.set(fl() * 6, fl() * 6, fl() * 6);
-            m.scale.setScalar(1.2 + fl() * 1.2);
-            m.userData.spin = (fl() - 0.5) * 0.8;
-            m.traverse((o) => { o.castShadow = false; });
-            floaters.add(m);
-        }
-        g.add(floaters);
-        clouds(Z, 18, 10, 80, 46, 70, LZ0, LZ1, fl, [0xffc8e8, 0xc8e0ff, 0xffffff, 0xe0c8ff]);
-    }
+    // Cotton-candy clouds over the lobby
+    clouds(Z, 18, 10, 80, 46, 70, LZ0, LZ1, rngFrom(32), [0xffc8e8, 0xc8e0ff, 0xffffff, 0xe0c8ff]);
+    void g;
 
     // Spawn: a glowing ring on the aisle
     const ring = new T.Mesh(new T.RingGeometry(5.2, 6.4, 48), glowMat(0xff8ad8, 1.6));
@@ -962,84 +983,337 @@ function fallingKeys(Z, look, spots, period, floorAt, rng) {
 }
 
 // =====================================================================================
-// Stages
+// Stages. Each corridor: an entry landing on top of the wall before, then 3 sections (4 in the
+// finale) with a checkpoint rest pad between them, then the foot of the end wall. Every stage mixes
+// its own hazard with the one before it, and each section is harder than the last.
 // =====================================================================================
 export const checkpoints = STAGES.map(() => []);
+const REST = 12;
+// [section, difficulty 0..1] per stage
+const PLAN = [
+    [['tiers', 0], ['tiers', 0.15], ['tiers', 0.3]],
+    [['bridges', 0.1], ['bridges', 0.25], ['bridges', 0.4]],
+    [['pistons', 0.1], ['bridges', 0.5], ['pistons', 0.35]],
+    [['river', 0.15], ['pistons', 0.5], ['river', 0.45]],
+    [['lasers', 0.2], ['river', 0.55], ['lasers', 0.5]],
+    [['conveyors', 0.2], ['lasers', 0.6], ['conveyors', 0.55]],
+    [['gumballs', 0.25], ['conveyors', 0.65], ['gumballs', 0.6]],
+    [['ice', 0.25], ['gumballs', 0.7], ['ice', 0.6]],
+    [['spinners', 0.3], ['ice', 0.75], ['spinners', 0.65]],
+    [['glitch', 0.3], ['spinners', 0.8], ['glitch', 0.65]],
+    [['crushers', 0.35], ['glitch', 0.8], ['crushers', 0.7]],
+    [['lasers', 0.85], ['pistons', 0.85], ['conveyors', 0.85]],
+    [['jelly', 0.5], ['crushers', 0.85], ['jelly', 0.8]],
+    [['storm', 0.6], ['jelly', 0.9], ['storm', 0.9]],
+    [['glitch', 1], ['gumballs', 1], ['spinners', 1], ['crushers', 1]],
+];
 function checkpoint(Z, s, k, x, y, z) {
     checkpoints[s.i][k] = new V3(x, y + 0.5, z);
     const pole = new T.Mesh(new T.CylinderGeometry(0.22, 0.22, 7, 8), candy(0xffffff, { rough: 0.3 }));
     pole.position.set(x + 7, y + 3.5, z); zoneGroup(Z).add(pole);
-    const flag = new T.Mesh(new T.PlaneGeometry(3, 2), new T.MeshStandardMaterial({ color: s.theme.accent, side: T.DoubleSide, roughness: 0.5 }));
+    const flag = new T.Mesh(new T.PlaneGeometry(3, 2), new T.MeshStandardMaterial({ color: s.theme.accent, side: T.DoubleSide, roughness: 0.5, emissive: s.theme.accent, emissiveIntensity: 0.25 }));
     flag.position.set(x + 8.5, y + 6, z); zoneGroup(Z).add(flag);
-    tickers.push((dt, t) => { flag.rotation.y = Math.sin(t * 3 + z) * 0.3; });
+    tickers.push((dt, t) => { if (zoneGroup(Z).visible) flag.rotation.y = Math.sin(t * 3 + z) * 0.3; });
     const tr = aabb(x, y + 3, z, STAGE_W, 8, 6); tr.zone = Z;
     tr.enter = () => actions.checkpoint(s.i, k);
     triggers.push(tr);
 }
-// Side walls, candy on them, the abyss far below, clouds over the top, the stage sign
-function stageShell(s, rng) {
+// Height of a section's floor at z, rising evenly from hA to hB
+const hAt = (c, z) => c.hA + (c.hB - c.hA) * Math.min(1, Math.max(0, (z - c.a) / (c.b - c.a)));
+// Big keys to close whatever gap is left before the next rest pad
+function closeGap(c, z, gap, size, extra) {
+    let guard = 0;
+    while (c.b - z > gap + 0.6 && guard++ < 8) {
+        const half = 1.62 * (size || 1.35), zc = Math.min(c.b - half - 1, z + gap + half);
+        keyStone(c.Z, c.th, (guard % 2 ? -4 : 4), zc, size || 1.35, hAt(c, zc), c.rng, extra ? { extra } : undefined);
+        z = zc + half;
+    }
+}
+const COOKIE = () => { const c = candyModel('cookie'); c.scale.set(2.75, 1.6, 2.75); const g = new T.Group(); c.position.y = -0.29; g.add(c); return g; };
+const ICE_BLOCK = () => { const g = new T.Group(); const m = new T.Mesh(new RoundedBoxGeometry(8, 1.6, 8, 2, 0.5), candy(0xc8eaff, { rough: 0.05, clear: true })); m.position.y = -0.8; m.castShadow = true; g.add(m); return g; };
+const JELLY_BLOCK = () => { const g = new T.Group(); const m = new T.Mesh(new RoundedBoxGeometry(8, 1.6, 8, 2, 0.6), candy(0xc89aff, { rough: 0.1, clear: true })); m.position.y = -0.8; g.add(m); return g; };
+
+const SEC = {
+    // Keyboard tiers rising like stairs; harder sections stagger half-width tiers left and right
+    tiers(c) {
+        const { Z, th, rng, a, b, hA, hB, d, s } = c;
+        const m = Math.max(2, Math.round((b - a) / 22)), step = (b - a) / m;
+        for (let j = 0; j < m; j++) {
+            const top = hA + (hB - hA) * (j + 1) / m, prev = hA + (hB - hA) * j / m, zc = a + (j + 0.5) * step;
+            if (d < 0.1) { kbSlab(Z, th, 0, zc, STAGE_W - 4, step - 0.4, top, rng, { thick: top - s.y0 + 6 }); continue; }
+            const w = d > 0.2 ? 24 : 30, x = (j % 2 ? 1 : -1) * (STAGE_W / 2 - 2 - w / 2);
+            kbSlab(Z, th, x, zc, w, step - 0.4, top, rng, { thick: top - s.y0 + 6 });
+            kbSlab(Z, th, -x + Math.sign(-x) * 0.5, zc, STAGE_W - 6 - w, step - 0.4, prev + 0.01, rng, { thick: prev - s.y0 + 6 });
+        }
+    },
+    // Space bars and big keys over the void, zig-zagging, gaps widening with difficulty
+    bridges(c) {
+        const { Z, th, rng, a, b, d } = c;
+        const gap = 4.5 + 4.5 * d, lane = 7 + 7 * d;
+        let z = a, i = 0;
+        for (;;) {
+            const bar = i % 3 !== 2, size = 1.5 - 0.3 * d, len = 18 - 4 * d, span = bar ? len : 3.24 * size;
+            const zc = z + gap + span / 2;
+            if (zc + span / 2 > b - 1) break;
+            const x = (i % 2 ? 1 : -1) * lane * (i % 4 < 2 ? 1 : 0.45);
+            if (bar) spaceBar(Z, th, x, zc, len, hAt(c, zc), 10 - 3 * d, { color: th.keys[i % th.keys.length] });
+            else keyStone(Z, th, x, zc, size, hAt(c, zc), rng);
+            z = zc + span / 2; i++;
+        }
+        closeGap(c, z, gap, 1.3);
+    },
+    // Rows of piston keys bobbing up and down in a wave
+    pistons(c) {
+        const { Z, th, rng, a, b, d } = c;
+        const sp = 8.5 + 1.5 * d, rows = Math.max(2, Math.floor((b - a - 3) / sp)), real = (b - a - 3) / rows;
+        const list = [];
+        for (let r = 0; r < rows; r++) {
+            const zc = a + 3 + real * (r + 0.5), base = hAt(c, zc) - 2.5;
+            [-13, 0, 13].forEach((x, k) => {
+                if ((r + k) % 3 === 2 && r % 2) return;
+                list.push({ x, z: zc, base, amp: 4.5 + 3.5 * d, size: 1.75 - 0.25 * d, period: 3.2 - 1.1 * d + (k === 1 ? 0.3 : 0), phase: r * 0.42 + k * 0.4 });
+            });
+        }
+        pistons(Z, th, list, rng);
+    },
+    // Cookies sliding across a flowing chocolate river (wafer ledges at the sides to rest on)
+    river(c) {
+        const { Z, th, a, b, d } = c;
+        const low = Math.min(c.hA, c.hB) - 4;
+        const tex = chocoRiverTexture().clone(); tex.needsUpdate = true; tex.repeat.set(4, (b - a) / 12);
+        const river = new T.Mesh(new T.PlaneGeometry(STAGE_W, b - a + 4), new T.MeshStandardMaterial({ map: tex, roughness: 0.35, metalness: 0.05 }));
+        river.rotation.x = -Math.PI / 2; river.position.set(0, low, (a + b) / 2); zoneGroup(Z).add(river);
+        scrolling.push({ tex, u: 0, v: -0.25 });
+        const k = killBox(Z, 'chocolate'); k.min.set(-HW, low - 12, a - 2); k.max.set(HW, low + 0.4, b + 2); k.active = true;
+        const n = Math.max(2, Math.floor((b - a) / (14 + 3 * d))), w = 7.6 - 1.2 * d, list = [];
+        for (let r = 0; r < n; r++) {
+            const zc = a + (r + 0.5) * (b - a) / n;
+            list.push({ x: 0, z: zc, top: hAt(c, zc), w, d: w, ax: (r % 2 ? 1 : -1) * (9 + 7 * d), period: 4.6 - 1.4 * d + (r % 3) * 0.4, phase: r * 0.9 });
+        }
+        sliders(Z, list, () => { const g = COOKIE(); g.scale.set(w / 7.6, 1, w / 7.6); return g; });
+        for (let r = 1; r < n; r += 2) {
+            const zc = a + r * (b - a) / n;
+            plainBox(Z, 5, 1, 9, (r % 4 === 1 ? 1 : -1) * 19, hAt(c, zc) - 0.5, zc, candy(0xe8b064, { rough: 0.7 }), { solid: true });
+        }
+        for (let q = 0; q < 8; q++) decor(Z, 'chocobar', (q % 2 ? -1 : 1) * (8 + (q % 3) * 5), low + 0.3, a + (q + 0.5) * (b - a) / 8, 0, q, 0, 1.6);
+    },
+    // Keyboard tiers with sweeping lasers and blinking laser gates
+    lasers(c) {
+        const { Z, th, rng, a, b, hA, hB, d } = c;
+        const m = Math.max(2, Math.round((b - a) / 26)), step = (b - a) / m;
+        for (let j = 0; j < m; j++) {
+            const top = hA + (hB - hA) * (j + 1) / m, zc = a + (j + 0.5) * step;
+            kbSlab(Z, th, 0, zc, STAGE_W - 4, step - 0.4, top, rng, { thick: 4 });
+            if (j % 2 === 0) sweepLaser(Z, 0xff2ad0, zc - step * 0.12, top + 0.6, top + 9, 2.8 - 0.9 * d, j * 0.7 + d * 2);
+            else blinkLaser(Z, 0x3affd8, zc, top, 8, 2.9 - 0.7 * d, 0.42 + 0.18 * d, j * 0.6);
+            if (d > 0.45) sweepLaser(Z, 0xffd028, zc + step * 0.32, top + 0.6, top + 9, 2.4 - 0.6 * d, j * 1.3 + 1.1);
+        }
+    },
+    // Arrow-key conveyor belts over the void: pushing you back, then sideways off the edge
+    conveyors(c) {
+        const { Z, th, a, b, d } = c;
+        const gap = 5 + 3 * d, speed = 10 + 14 * d, dirs = [[0, -1], [1, 0], [0, -1], [-1, 0]];
+        let z = a, i = 0;
+        for (;;) {
+            const len = 26 - 4 * d, zc = z + gap + len / 2;
+            if (zc + len / 2 > b - 2) break;
+            const [px, pz] = dirs[i % 4];
+            const w = pz ? 12 - 3 * d : 24, x = pz ? (i % 2 ? 1 : -1) * (6 + 4 * d) : 0;
+            conveyor(Z, x, zc, w, len, hAt(c, zc), new V3(px * speed * 0.7, 0, pz * speed), th);
+            z = zc + len / 2; i++;
+        }
+        closeGap(c, z, gap, 1.35);
+    },
+    // A keyboard ramp (steps under 1.7 studs, no jumping needed) with giant gumballs rolling down
+    gumballs(c) {
+        const { Z, th, rng, a, b, hA, hB, d, s } = c;
+        const rise = hB - hA, steps = Math.max(3, Math.ceil(rise / 1.6)), step = (b - a) / steps;
+        for (let k = 0; k < steps; k++) {
+            const top = hA + rise * (k + 1) / steps;
+            kbSlab(Z, th, 0, a + (k + 0.5) * step, STAGE_W - 4, step, top, rng, { thick: top - s.y0 + 6 });
+        }
+        const floorAt = (z) => hA + rise * (Math.min(steps - 1, Math.max(0, Math.floor((z - a) / step))) + 1) / steps;
+        const xs = d > 0.5 ? [-16, -5.3, 5.3, 16] : [-14, 1, 15];
+        gumballs(Z, xs.map((x, k) => ({ x, r: 3.6 + 0.8 * d, speed: 24 + 14 * d, every: 2.6 - 0.7 * d, count: 2, phase: k * 0.85, wobble: 1 + d })), a, b, floorAt, rng);
+    },
+    // Slippery frosting: narrow icy keyboards zig-zagging over the void, gliding ice blocks
+    ice(c) {
+        const { Z, th, rng, a, b, d } = c;
+        const ice = { ice: true }, gap = 4.5 + 2.5 * d, w = 12 - 5 * d;
+        let z = a, i = 0;
+        for (;;) {
+            const slide = d > 0.3 && i % 3 === 2, len = slide ? 8 : 14 - 3 * d, zc = z + gap + len / 2;
+            if (zc + len / 2 > b - 1) break;
+            if (slide) sliders(Z, [{ x: 0, z: zc, top: hAt(c, zc), w: 8, d: 8, ax: 9 + 6 * d, period: 3.4 - d, phase: i, extra: ice }], ICE_BLOCK);
+            else kbSlab(Z, th, (i % 2 ? 1 : -1) * (5 + 7 * d), zc, w, len, hAt(c, zc), rng, { thick: 3, extra: ice, caseColor: 0x9ad8ff });
+            z = zc + len / 2; i++;
+        }
+        closeGap(c, z, gap, 1.35, ice);
+    },
+    // Peppermint discs with spinning lollipop bars: low bars to jump, high bars not to jump into
+    spinners(c) {
+        const { Z, th, rng, a, b, hA, hB, d } = c;
+        const R = 13, n = Math.max(1, Math.floor((b - a) / (2 * R + 8))), sp = (b - a) / n;
+        let prevEnd = a, prevTop = hA;
+        for (let k = 0; k < n; k++) {
+            const zc = a + (k + 0.5) * sp, top = hA + (hB - hA) * (k + 0.5) / n;
+            cyl(Z, R + 2, R + 2, 2, 0, top - 1.6, zc, candy(0xff5a6a, { rough: 0.2, clear: true }), 40);
+            cyl(Z, R + 0.6, R + 0.6, 2.04, 0, top - 1.6, zc, candy(0xffffff, { rough: 0.2, clear: true }), 40);
+            keyGrid(Z, th, 0, zc, 20, 20, top, rng);
+            solids.push(Object.assign(aabb(0, top - 1.3, zc, 2 * R, 2.6, 2 * R), { zone: Z }));
+            spinner(Z, 0, zc, top, 2 * R, k % 2 && d > 0.3 ? 6.4 : 1.6, (k % 2 ? -1 : 1) * (1.1 + 1.0 * d), k + d * 3, k % 2 ? 0xff3a50 : 0xffffff, d > 0.4);
+            // Candy bridge from the last landing to this disc
+            const bz0 = prevEnd - 0.5, bz1 = zc - R + 1;
+            if (bz1 > bz0) plainBox(Z, 6, 1, bz1 - bz0, 0, Math.min(prevTop, top) - 0.5, (bz0 + bz1) / 2, candy(0xffffff, { rough: 0.3 }), { solid: true });
+            prevEnd = zc + R - 1; prevTop = top;
+        }
+        if (b - prevEnd > 0.5) plainBox(Z, 6, 1, b - prevEnd + 1, 0, Math.min(prevTop, hB) - 0.5, (prevEnd + b) / 2, candy(0xffffff, { rough: 0.3 }), { solid: true });
+    },
+    // Glitch keys that flicker and vanish; glitch lasers on the harder sections
+    glitch(c) {
+        const { Z, th, rng, a, b, d } = c;
+        const sp = 8.2 + 0.8 * d, rows = Math.max(2, Math.floor((b - a - 2) / sp)), list = [];
+        for (let r = 0; r < rows; r++) {
+            const zc = a + (r + 0.5) * (b - a) / rows, top = hAt(c, zc);
+            (d > 0.6 ? [-10, 8] : [-12, 0, 12]).forEach((x, j) => list.push({
+                x: x + (r % 2 ? 3 : -3), z: zc, top, size: 1.5 - 0.2 * d, period: 3.6 - 0.8 * d, on: 0.7 - 0.2 * d, phase: (r * 0.9 + j * 1.3) % 3.6,
+            }));
+        }
+        blinkKeys(Z, th, list, rng);
+        if (d > 0.5) for (let k = 1; k <= 2; k++) blinkLaser(Z, 0x3affd8, a + k * (b - a) / 3, hAt(c, a + k * (b - a) / 3) - 2, 10, 3.0, 0.35, k * 1.1);
+    },
+    // Keyboard tiers with giant computer mice slamming down
+    crushers(c) {
+        const { Z, th, rng, a, b, hA, hB, d } = c;
+        const m = Math.max(2, Math.round((b - a) / 24)), step = (b - a) / m;
+        for (let j = 0; j < m; j++) {
+            const top = hA + (hB - hA) * (j + 1) / m, zc = a + (j + 0.5) * step;
+            kbSlab(Z, th, 0, zc, STAGE_W - 4, step - 0.4, top, rng, { thick: 4 });
+            const cols = j % 2 ? [-12, 12] : [-16, 0, 16];
+            cols.forEach((x, k) => crusher(Z, x, zc, cols.length === 2 ? 22 : 15, Math.min(14, step - 4), top, 3.4 - 0.7 * d + (j % 3) * 0.2, j * 0.8 + k * 1.05));
+        }
+    },
+    // Jelly bounce pads launch you over big gaps; spinners wait on the harder landings
+    jelly(c) {
+        const { Z, th, rng, a, b, d } = c;
+        const cols = [0xa8ff5a, 0xff8ae0, 0xffe05a, 0x5ae0ff];
+        let z = a + 6, i = 0, end = a;
+        while (z + 34 < b) {
+            const side = i % 2 ? 1 : -1;
+            jellyPad(Z, side * 7, z, hAt(c, z), 4.6, 88 + 8 * d, cols[i % 4]);
+            const lz = z + 26 + 4 * d, ltop = hAt(c, lz);
+            kbSlab(Z, th, -side * 6, lz, 20 - 4 * d, 12, ltop, rng, { thick: 3 });
+            if (d > 0.5) spinner(Z, -side * 6, lz, ltop, 16, 1.6, side * (1.4 + d), i, cols[(i + 1) % 4], false);
+            end = lz + 6; z = lz + 12; i++;
+        }
+        if (b - end > 8) sliders(Z, [{ x: 0, z: (end + b) / 2, top: hAt(c, (end + b) / 2), w: 8, d: 8, ay: 3, period: 2.6, phase: i }], JELLY_BLOCK);
+    },
+    // Sugar storm: narrow zig-zag walkways, wind gusts and keys falling from the sky
+    storm(c) {
+        const { Z, th, rng, a, b, d } = c;
+        const xs = [0, -12, 10, -6, 12, -2], segs = [];
+        let z = a, i = 0;
+        while (z + 18 < b) {
+            const len = Math.min(34 - 6 * d, b - z - 4), w = 10 - 3 * d, x = xs[i % xs.length] * (0.6 + 0.4 * d);
+            const z0 = z + 2, z1 = z0 + len, top = hAt(c, (z0 + z1) / 2);
+            kbSlab(Z, th, x, (z0 + z1) / 2, w, len, top, rng, { thick: 3 });
+            const prev = segs[segs.length - 1];
+            if (prev) plainBox(Z, Math.abs(x - prev.x) + w, 1, 5, (x + prev.x) / 2, Math.min(top, prev.top) - 0.5, z0 - 2, candy(th.case, { rough: 0.4 }), { solid: true });
+            segs.push({ z0, z1, top, x });
+            windZone(Z, z0, z1, top, top + 22, 7 - 2 * d, i * 1.7, 10 + 16 * d);
+            z = z1 + 2; i++;
+        }
+        const last = segs[segs.length - 1];
+        if (last && b - last.z1 > 5) closeGap(c, last.z1, 4.5, 1.4);
+        const floorAt = (zz) => { for (const g of segs) if (zz >= g.z0 - 1 && zz <= g.z1 + 1) return g.top; return c.hA; };
+        const spots = [];
+        segs.forEach((g, k) => { for (let q = 0; q < 2; q++) spots.push({ x: g.x, z: g.z0 + (q + 0.5) * (g.z1 - g.z0) / 2, phase: k * 0.7 + q * 1.6 }); });
+        fallingKeys(Z, th, spots, 3.8 - d, floorAt, rng);
+        const flash = new T.Mesh(new T.PlaneGeometry(400, 300), new T.MeshBasicMaterial({ color: 0xeaf4ff, transparent: true, opacity: 0, depthWrite: false, toneMapped: false }));
+        flash.position.set(0, c.s.top + 80, (a + b) / 2); flash.rotation.x = Math.PI / 2; zoneGroup(Z).add(flash);
+        hz(Z, (t) => { const q = cyc(t, 9, a * 0.01) * 9; flash.material.opacity = q < 0.12 || (q > 0.25 && q < 0.33) ? 0.6 : 0; });
+    },
+};
+
+// Side walls with the candy band, the abyss far below, clouds, and the stage gate
+function stageShell(s, rng, floorAt) {
     const Z = s.i, th = s.theme;
     const bottom = s.y0 - CFG.voidDepth - 12, top = s.top + 46, len = s.zE - s.zS;
     for (const side of [-1, 1]) {
         studBox(Z, 2, top - bottom, len, side * (HW + 1), (top + bottom) / 2, (s.zS + s.zE) / 2, th.wall);
         roundBox(Z, 2.8, 1.4, len, side * (HW + 1), top + 0.7, (s.zS + s.zE) / 2, candy(th.trim, { rough: 0.3 }), 0.5);
-        glowBox(Z, 0.3, 0.3, len, side * (HW - 0.05), s.y1 + 0.2, (s.zS + s.zE) / 2, th.accent, 1.2);
-        wallCandy(Z, th.deco, side, s.zS + 3, s.zE - 3, s.y0 + 4, s.top + 30, rng, s.i < 3 ? 55 : 80);
+        // Candy band above head height all along, and columns of candy up beside the end wall
+        candyWall(Z, th.deco, side, s.zS + 1, s.zE - 2, floorAt, 11, 4, rng);
+        candyWall(Z, th.deco, side, s.zE - 26, s.zE - 2, () => s.y1 + 11 + 4 * 6.6, 0, Math.max(0, Math.floor((s.top + 8 - (s.y1 + 37)) / 8)), rng, { rowGap: 8 });
     }
-    // The abyss: a glowing candy-floss floor far below
     const ab = new T.Mesh(new T.PlaneGeometry(STAGE_W, len), new T.MeshBasicMaterial({ color: shade(th.accent, 0.5), toneMapped: false }));
     ab.rotation.x = -Math.PI / 2; ab.position.set(0, s.y0 - CFG.voidDepth, (s.zS + s.zE) / 2); zoneGroup(Z).add(ab);
     for (let k = 0; k < 14; k++) decor(Z, 'cloud', (rng() - 0.5) * 40, s.y0 - CFG.voidDepth + 2 + rng() * 6, s.zS + rng() * len, 0, rng() * 6, 0, 3 + rng() * 3, lighten(th.accent, 0.55));
     clouds(Z, 8, 40, 110, s.top - 20, s.top + 80, s.zS, s.zE, rng, [lighten(th.sky, 0.3), 0xffffff, lighten(th.accent, 0.6)]);
-    // "😊 STAGE N 😊" over the entry, the hint under it
-    banner(Z, '😊 ' + s.name.toUpperCase() + ' 😊', ['#ffffff', css(lighten(th.accent, 0.5))], 30, new V3(0, s.y0 + 26, s.zS + 3), new V3(0, 0, -1), s.sub);
+    stageGate(s);
 }
-// Keys on the entry landing (the top of the wall before) and the wall-base landing
-function landings(s, rng) {
-    const Z = s.i, th = s.theme;
-    if (s.i > 0) keyGrid(Z, th, 0, s.zS + 10, STAGE_W, 20, s.y0, rng);
-    else kbSlab(Z, th, 0, s.zS + 10, STAGE_W - 4, 20, s.y0, rng, { thick: 4 });
-    kbSlab(Z, th, 0, s.zE - 12, STAGE_W - 4, 24, s.y1, rng, { thick: 8 });
-    checkpoint(Z, s, 0, 0, s.y0, s.zS + 12);
-    checkpoint(Z, s, 1, CLIMB_X, s.y1, s.zE - 14);
+// The gate at every stage entry: candy-striped pillars topped with lollipops, a beam with the title
+function stageGate(s) {
+    const Z = s.i, th = s.theme, y = s.y0, z = s.zS + 5;
+    const stripe = stripeTexture(0xffffff, th.accent, 3).clone(); stripe.needsUpdate = true; stripe.repeat.set(1, 6);
+    const pillarM = candy(0xffffff, { rough: 0.18, clear: true }).clone(); pillarM.map = stripe;
+    for (const sx of [-1, 1]) {
+        const p = new T.Mesh(new T.CylinderGeometry(1.5, 1.6, 24, 20), pillarM);
+        p.position.set(sx * (HW - 2.6), y + 12, z); p.castShadow = true; zoneGroup(Z).add(p);
+        decor(Z, 'lolliRainbow', sx * (HW - 2.6), y + 27.5, z, 0, 0, 0, 1.6);
+    }
+    roundBox(Z, STAGE_W - 5, 4.4, 2.4, 0, y + 22.2, z, candy(th.case, { rough: 0.3 }), 0.9);
+    glowBox(Z, STAGE_W - 7, 0.35, 2.5, 0, y + 19.9, z, th.accent, 1.5);
+    glowBox(Z, STAGE_W - 7, 0.35, 2.5, 0, y + 24.5, z, th.accent, 1.5);
+    banner(Z, '😊 ' + s.name.toUpperCase() + ' 😊', ['#ffffff', css(lighten(th.accent, 0.55))], 22, new V3(0, y + 21.4, z - 1.3), new V3(0, 0, -1), s.sub);
 }
-// The end wall: a block up to the next stage's floor, three Wins pads on its left, jump markers
-// and arrows on the climbing side (right)
+// The end wall: a block up to the next stage's floor, its face a giant keyboard (white arrow keys
+// up the climbing lane on the right), three Wins pads with light beams and trophies on the left
+const beamTex = (() => {
+    const c = document.createElement('canvas'); c.width = 4; c.height = 64;
+    const x = c.getContext('2d'), g = x.createLinearGradient(0, 0, 0, 64);
+    g.addColorStop(0, 'rgba(255,255,255,0)'); g.addColorStop(0.7, 'rgba(255,255,255,0.35)'); g.addColorStop(1, 'rgba(255,255,255,0.8)');
+    x.fillStyle = g; x.fillRect(0, 0, 4, 64);
+    return texFrom(c);
+})();
 function endWall(s, rng) {
     const Z = s.i, th = s.theme, last = s.i === STAGES.length - 1;
     const depth = last ? SUMMIT.len : 20, bottom = s.y1 - 40;
-    // The block (its top is the next stage's entry landing)
     studBox(Z, STAGE_W, s.top - 0.6 - bottom, depth, 0, (s.top - 0.6 + bottom) / 2, s.zE + depth / 2, shade(th.wall, 0.92), { solid: false });
     solid(Z, 0, (s.top + bottom) / 2, s.zE + depth / 2, STAGE_W, s.top - bottom, depth);
     roundBox(Z, STAGE_W + 1, 1.2, 1.4, 0, s.top - 0.2, s.zE - 0.2, candy(th.trim, { rough: 0.3 }), 0.5);
-    // Climb lane: glowing arrows and jump markers every 5 jumps
+    // The giant keyboard on the wall face
+    const up = letterIndex('↑'), climbC = lighten(th.accent, 0.7);
+    for (let y = s.y1 + 2.4; y < s.top - 2; y += 4) {
+        for (let x = -HW + 2; x < HW - 1; x += 4) {
+            const climb = x < -7.5;
+            addWallKey(Z, th, x, y, s.zE - 0.35, climb ? climbC : th.keys[Math.floor(rng() * th.keys.length)], climb ? up : randomLetter(rng), 1);
+        }
+    }
+    // Jump markers up the climbing lane
     for (let n = 5; n <= s.jumps; n += 5) {
         const y = s.y1 + n * STUDS_PER_JUMP;
-        textPlane([{ t: n + ' JUMPS', c: '#ffffff', s: css(shade(th.accent, 0.5)), px: 86 }], 9, 512, new V3(CLIMB_X, y, s.zE - 0.12), new V3(CLIMB_X, y, s.zE - 10), zoneGroup(Z));
-        glowBox(Z, 14, 0.25, 0.2, CLIMB_X, y - 1.8, s.zE - 0.1, th.accent, 1.1);
+        textPlane([{ t: n + ' JUMPS', c: '#ffffff', s: css(shade(th.accent, 0.45)), px: 86 }], 9, 512, new V3(CLIMB_X, y, s.zE - 0.7), new V3(CLIMB_X, y, s.zE - 10), zoneGroup(Z));
     }
-    for (let y = s.y1 + 3; y < s.top - 4; y += 14) textPlane([{ t: '⬆', c: css(lighten(th.accent, 0.4)), s: '#16121f', px: 200 }], 5, 256, new V3(CLIMB_X + 5.5, y + 6, s.zE - 0.12), new V3(CLIMB_X + 5.5, y + 6, s.zE - 10), zoneGroup(Z));
-    textPlane([{ t: '⬆ SPAM JUMP ⬆', c: '#ffffff', s: css(shade(th.accent, 0.4)), px: 90 }, { t: s.jumps + ' JUMPS TO ' + (last ? 'ESCAPE' : 'STAGE ' + (s.i + 2)), c: '#ffd028', s: '#16121f', px: 64 }], 16, 1024, new V3(CLIMB_X, s.y1 + 8, s.zE - 0.14), new V3(CLIMB_X, s.y1 + 8, s.zE - 10), zoneGroup(Z));
-    // Candy on the wall face (non-solid)
-    for (let k = 0; k < Math.min(60, s.wallH / 4); k++) {
-        const set = DECO_SETS[th.deco] || DECO_SETS.sweets;
-        const [type, pal] = set[Math.floor(rng() * set.length)];
-        const x = (rng() < 0.5 ? -1 : 1) * (HW - 3 - rng() * 2), y = s.y1 + 6 + rng() * (s.wallH - 8);
-        if (x < -6 && x > CLIMB_X - 10) continue;
-        decor(Z, type, x, y, s.zE - 1.2, type === 'donut' || type === 'cookie' ? Math.PI / 2 : 0, Math.PI, 0, 1.6 + rng(), pal ? pal[Math.floor(rng() * pal.length)] : undefined);
-    }
-    // Wins pads: ledges sticking out of the wall (yellow +1x, cyan +2x, pink +3x)
+    textPlane([{ t: '⬆ SPAM JUMP ⬆', c: '#ffffff', s: css(shade(th.accent, 0.4)), px: 90 }, { t: s.jumps + ' JUMPS TO ' + (last ? 'ESCAPE' : 'STAGE ' + (s.i + 2)), c: '#ffd028', s: '#16121f', px: 64 }], 16, 1024, new V3(CLIMB_X, s.y1 + 8, s.zE - 0.75), new V3(CLIMB_X, s.y1 + 8, s.zE - 10), zoneGroup(Z));
+    // Wins pads: yellow +1x, cyan +2x, pink +3x, each with a light beam and a spinning trophy
     const PADC = [0xffd028, 0x3ad8ff, 0xff5ad8];
     s.pads.forEach((p) => {
         const c = PADC[p.k];
         roundBox(Z, PAD.w, 1.2, PAD.d, p.x, p.y - 0.6, p.z, candy(c, { rough: 0.25, clear: true }), 0.35, { solid: true });
         glowBox(Z, PAD.w - 0.6, 0.08, PAD.d - 0.6, p.x, p.y + 0.02, p.z, c, 1.25);
-        // A bracket under the ledge
         plainBox(Z, 1.2, 3, 1.2, p.x, p.y - 2.4, s.zE - 0.8, candy(shade(c, 0.6), { rough: 0.4 }), { rx: 0.6 });
+        const bm = new T.MeshBasicMaterial({ map: beamTex, color: c, transparent: true, blending: T.AdditiveBlending, depthWrite: false, side: T.DoubleSide, toneMapped: false });
+        bm.color.multiplyScalar(1.6);
+        const beam = new T.Mesh(new T.CylinderGeometry(2.4, 3.0, 22, 20, 1, true), bm);
+        beam.position.set(p.x, p.y + 11, p.z); zoneGroup(Z).add(beam);
+        const cup = new T.Mesh(TROPHY_GEO, GOLD); cup.position.set(p.x, p.y + 1.2, p.z); cup.scale.setScalar(1.1); cup.castShadow = true;
+        zoneGroup(Z).add(cup);
+        tickers.push((dt, t) => { if (zoneGroup(Z).visible) { cup.rotation.y = t * 1.5 + p.k; cup.position.y = p.y + 1.2 + Math.sin(t * 2 + p.k) * 0.3; } });
         billboard([
             { t: '+' + fmt(p.wins) + ' Win' + (p.wins > 1 ? 's' : ''), c: css(lighten(c, 0.2)), s: '#16121f', px: 76 },
             { t: '🦘 ' + p.req + ' jump' + (p.req > 1 ? 's' : ''), c: '#ffffff', s: '#16121f', px: 46 },
-        ], 7, 512, new V3(p.x, p.y + 4.6, p.z - 1), zoneGroup(Z));
+        ], 7, 512, new V3(p.x, p.y + 6.6, p.z - 1), zoneGroup(Z));
         const tr = aabb(p.x, p.y + 2, p.z, PAD.w, 4, PAD.d); tr.zone = Z;
         tr.enter = () => actions.pad(s.i, p.k);
         triggers.push(tr);
@@ -1051,14 +1325,9 @@ function buildSummit(s, rng) {
     const Z = s.i, y = s.top, z0 = s.zE;
     const gold = { keys: [0xffd028, 0xffe68a, 0xffffff, 0xffc828], ink: 0x6a4a10, glow: false };
     keyGrid(Z, gold, 0, z0 + SUMMIT.len / 2, STAGE_W, SUMMIT.len, y, rng);
-    const trophy = new T.Group(); trophy.position.set(0, y, z0 + SUMMIT.len - 14); zoneGroup(Z).add(trophy);
-    const goldM = new T.MeshStandardMaterial({ color: 0xffc828, roughness: 0.2, metalness: 0.85 });
-    const add = (geo, px, py, pz) => { const m = new T.Mesh(geo, goldM); m.position.set(px, py, pz); m.castShadow = true; trophy.add(m); return m; };
-    add(new RoundedBoxGeometry(10, 3, 10, 2, 0.5), 0, 1.5, 0);
-    add(new T.CylinderGeometry(1.2, 2, 8, 16), 0, 7, 0);
-    add(new T.CylinderGeometry(7, 3, 9, 28, 1, true), 0, 15.5, 0).material.side = T.DoubleSide;
-    for (const sx of [-1, 1]) { const h = add(new T.TorusGeometry(2.6, 0.6, 10, 24, Math.PI), sx * 7.2, 15.5, 0); h.rotation.z = sx * Math.PI / 2; }
-    tickers.push((dt, t) => { trophy.rotation.y = Math.sin(t * 0.5) * 0.3; });
+    const trophy = new T.Mesh(TROPHY_GEO, GOLD);
+    trophy.scale.setScalar(8); trophy.position.set(0, y, z0 + SUMMIT.len - 14); trophy.castShadow = true; zoneGroup(Z).add(trophy);
+    tickers.push((dt, t) => { trophy.rotation.y = Math.sin(t * 0.5) * 0.4; });
     banner(Z, '👑 YOU ESCAPED! 👑', ['#ffffff', '#ffd028'], 40, new V3(0, y + 34, z0 + SUMMIT.len - 4), new V3(0, 0, -1), 'You beat all 15 stages of the keyboard!');
     roundBox(Z, 12, 0.6, 9, SUMMIT.x, y + 0.3, SUMMIT.z, candy(0xffd028, { rough: 0.2, clear: true }), 0.4);
     glowBox(Z, 11.4, 0.1, 8.4, SUMMIT.x, y + 0.62, SUMMIT.z, 0xffe06a, 1.5);
@@ -1067,251 +1336,30 @@ function buildSummit(s, rng) {
     for (const sx of [-1, 1]) studBox(Z, 2, 60, SUMMIT.len, sx * (HW + 1), y + 30, z0 + SUMMIT.len / 2, s.theme.wall);
     studBox(Z, STAGE_W + 4, 60, 2, 0, y + 30, z0 + SUMMIT.len + 1, s.theme.wall);
 }
-
-// ----- the 15 stage layouts. Each fills the corridor from zA to zB, rising from y0 to y1 -----
-const BUILD = {
-    // 1. Candy Keys: keyboard tiers stacked like the reference, no gaps
-    tiers(s, rng, Z, th, zA, zB) {
-        const n = 5, step = (zB - zA) / n;
-        for (let k = 0; k < n; k++) {
-            const top = s.y0 + (s.rise * k) / (n - 1);
-            kbSlab(Z, th, 0, zA + (k + 0.5) * step, STAGE_W - 4, step - 2, top, rng, { thick: Math.max(4, top - s.y0 + 4) });
-        }
-    },
-    // 2. Spacebar Bridges: long space bars and floating keys over the void
-    bridges(s, rng, Z, th, zA, zB) {
-        const y = s.y0;
-        spaceBar(Z, th, 0, zA + 12, 22, y, 12, { color: 0xffffff });
-        spaceBar(Z, th, -12, zA + 41, 22, y + 2, 9, { color: th.keys[0] });
-        spaceBar(Z, th, 11, zA + 69, 22, y + 4, 9, { color: th.keys[2] });
-        spaceBar(Z, th, -2, zA + 96, 18, y + 5.5, 8, { color: 0xffffff });
-        const stones = [[8, 112, 7], [-6, 122, 8.5], [6, 132, 10], [-4, 142, 11]];
-        for (const [x, dz, h] of stones) if (zA + dz < zB - 4) keyStone(Z, th, x, zA + dz, 1.6, y + h, rng);
-    },
-    // 3. Typing Keys: three rows of piston keys bobbing in a wave
-    pistons(s, rng, Z, th, zA, zB) {
-        const list = [], rows = Math.floor((zB - zA - 6) / 9);
-        for (let r = 0; r < rows; r++) {
-            const base = s.y0 - 2 + (s.rise * r) / rows;
-            for (const x of [-13, 0, 13]) {
-                if ((r + (x > 0 ? 1 : x < 0 ? 2 : 0)) % 3 === 2 && r % 4 !== 0) continue;
-                list.push({ x, z: zA + 6 + r * 9, base, amp: 6, size: 1.7, period: 2.8 + (x === 0 ? 0.4 : 0), phase: r * 0.35 + (x + 13) * 0.04 });
-            }
-        }
-        pistons(Z, th, list, rng);
-        // A static rest key every few rows
-        for (let r = 4; r < rows; r += 5) keyStone(Z, th, 21, zA + 6 + r * 9, 0.9, s.y0 + (s.rise * r) / rows + 2, rng);
-    },
-    // 4. Chocolate River: cookies sliding over a flowing chocolate river, wafer bridges
-    river(s, rng, Z, th, zA, zB) {
-        const y = s.y0, riverY = y - 4;
-        const tex = chocoRiverTexture().clone(); tex.needsUpdate = true; tex.repeat.set(4, (zB - zA) / 12);
-        const rm = new T.MeshStandardMaterial({ map: tex, roughness: 0.15, metalness: 0.1, color: 0xffffff });
-        const river = new T.Mesh(new T.PlaneGeometry(STAGE_W, zB - zA + 8), rm);
-        river.rotation.x = -Math.PI / 2; river.position.set(0, riverY, (zA + zB) / 2); zoneGroup(Z).add(river);
-        scrolling.push({ tex, u: 0, v: -0.25 });
-        const k = killBox(Z, 'chocolate'); k.min.set(-HW, riverY - 10, zA - 4); k.max.set(HW, riverY + 0.4, zB + 4); k.active = true;
-        const list = [];
-        for (let r = 0; r < 9; r++) {
-            const z = zA + 10 + r * 17;
-            if (z > zB - 6) break;
-            list.push({ x: 0, z, top: y + (s.rise * r) / 9, w: 7.6, d: 7.6, ax: r % 2 ? 13 : -13, period: 3.6 + (r % 3) * 0.6, phase: r * 0.9 });
-        }
-        sliders(Z, list, () => {
-            const c = candyModel('cookie'); c.scale.set(2.75, 1.6, 2.75);
-            const grp = new T.Group(); c.position.y = -0.29; grp.add(c); return grp;
-        });
-        // Wafer bridges on alternate sides
-        for (let r = 1; r < 9; r += 3) {
-            const z = zA + 18 + r * 17;
-            if (z > zB - 12) break;
-            const top = y + (s.rise * (r + 0.5)) / 9;
-            plainBox(Z, 5, 1, 12, (r % 2 ? 1 : -1) * 18, top - 0.5, z, candy(0xe8b064, { rough: 0.7 }), { solid: true, extra: {} });
-        }
-        for (let k2 = 0; k2 < 12; k2++) decor(Z, 'chocobar', (rng() - 0.5) * 40, riverY + 0.3, zA + rng() * (zB - zA), 0, rng() * 6, 0, 1.6);
-    },
-    // 5. Caps Lock Lasers: tiers with sweeping lasers and blinking laser gates
-    lasers(s, rng, Z, th, zA, zB) {
-        const n = 6, step = (zB - zA) / n;
-        for (let k = 0; k < n; k++) {
-            const top = s.y0 + (s.rise * k) / (n - 1);
-            kbSlab(Z, th, 0, zA + (k + 0.5) * step, STAGE_W - 4, step - 1, top, rng, { thick: Math.max(4, top - s.y0 + 4) });
-            const zc = zA + (k + 0.5) * step;
-            if (k % 2 === 0) sweepLaser(Z, 0xff2ad0, zc, top + 0.6, top + 9, 2.6 + k * 0.1, k * 0.7);
-            else blinkLaser(Z, 0x3affd8, zc, top, 8, 2.8, 0.5, k * 0.6);
-        }
-    },
-    // 6. Arrow Key Conveyors over the void
-    conveyors(s, rng, Z, th, zA, zB) {
-        const y = s.y0;
-        conveyor(Z, 0, zA + 18, 14, 36, y, new V3(0, 0, -15), th);
-        conveyor(Z, -10, zA + 60, 12, 32, y + 3, new V3(9, 0, 0), th);
-        conveyor(Z, 10, zA + 101, 12, 34, y + 6, new V3(0, 0, -22), th);
-        conveyor(Z, -2, zA + 133, 30, 14, y + 9, new V3(-12, 0, 0), th);
-        keyStone(Z, th, 14, zA + 149, 1.4, y + 10, rng);
-        keyStone(Z, th, 2, zA + 158, 1.4, y + 11, rng);
-        keyStone(Z, th, -8, zA + 167, 1.4, y + 11.5, rng);
-    },
-    // 7. Gumball Alley: a long keyboard ramp with giant gumballs rolling down it
-    gumballs(s, rng, Z, th, zA, zB) {
-        // Steps of 1.67 studs: walkable without jumping (the auto-step is 1.7)
-        const steps = 18, step = (zB - zA) / steps;
-        for (let k = 0; k < steps; k++) {
-            const top = s.y0 + (s.rise * (k + 1)) / steps;
-            kbSlab(Z, th, 0, zA + (k + 0.5) * step, STAGE_W - 4, step, top, rng, { thick: top - s.y0 + 6 });
-        }
-        const stepFloor = (z) => s.y0 + (s.rise * (Math.min(steps - 1, Math.max(0, Math.floor((z - zA) / step))) + 1)) / steps;
-        gumballs(Z, [
-            { x: -14, r: 4.2, speed: 30, every: 2.2, count: 3, phase: 0, wobble: 2 },
-            { x: 1, r: 4.2, speed: 34, every: 1.9, count: 3, phase: 0.7, wobble: 1.5 },
-            { x: 15, r: 4.2, speed: 28, every: 2.6, count: 3, phase: 1.3, wobble: 2 },
-        ], zA, zB, stepFloor, rng);
-        // Safe nooks: keycap shields to hide behind
-        for (let k = 2; k < steps - 1; k += 3) for (const x of [-7.5, 8]) {
-            const z = zA + (k + 0.5) * step;
-            keyStone(Z, th, x, z + 2, 1, stepFloor(z) + 3.2, rng, { stem: false });
-        }
-    },
-    // 8. Slippery Frosting: icy keys, narrow paths and gliding ice blocks over the void
-    ice(s, rng, Z, th, zA, zB) {
-        const y = s.y0, ice = { ice: true };
-        const path = [[0, 10, 30, 14, 0], [-10, 38, 8, 22, 2], [6, 58, 22, 6, 3], [14, 80, 8, 26, 4.5]];
-        for (const [x, dz, w, d, h] of path) {
-            kbSlab(Z, th, x, zA + dz, w, d, y + h, rng, { thick: 3, extra: ice, caseColor: 0x9ad8ff });
-        }
-        const list = [];
-        for (let r = 0; r < 4; r++) list.push({ x: 0, z: zA + 104 + r * 14, top: y + 6 + r * 1.5, w: 8, d: 8, ax: r % 2 ? 12 : -12, period: 3.2 + r * 0.4, phase: r * 1.1, extra: ice });
-        sliders(Z, list, () => { const g = new T.Group(); const m = new T.Mesh(new RoundedBoxGeometry(8, 1.6, 8, 2, 0.5), candy(0xc8eaff, { rough: 0.05, clear: true })); m.position.y = -0.8; m.castShadow = true; g.add(m); return g; });
-        kbSlab(Z, th, -12, zA + 166, 16, 10, y + s.rise - 1.5, rng, { thick: 3, extra: ice, caseColor: 0x9ad8ff });
-    },
-    // 9. Lollipop Spinners: peppermint discs with spinning bars
-    spinners(s, rng, Z, th, zA, zB) {
-        const discs = 5, gap = (zB - zA) / discs;
-        for (let k = 0; k < discs; k++) {
-            const z = zA + (k + 0.5) * gap, top = s.y0 + (s.rise * k) / (discs - 1);
-            // A peppermint disc: red rim, white top, keys in the middle
-            cyl(Z, 15, 15, 2, 0, top - 1.6, z, candy(0xff5a6a, { rough: 0.2, clear: true }), 40);
-            cyl(Z, 13.6, 13.6, 2.04, 0, top - 1.6, z, candy(0xffffff, { rough: 0.2, clear: true }), 40);
-            keyGrid(Z, th, 0, z, 20, 20, top, rng);
-            solids.push(Object.assign(aabb(0, top - 1.3, z, 27, 2.6, 27), { zone: Z }));
-            // Low bars: jump them. High bars (above your head): don't jump into them!
-            spinner(Z, 0, z, top, 28, k % 2 ? 6.4 : 1.6, (k % 2 ? -1 : 1) * (1.3 + k * 0.12), k, k % 2 ? 0xff3a50 : 0xffffff, k >= 3);
-            if (k < discs - 1) plainBox(Z, 6, 1, gap - 28, 0, top - 0.5 + (s.rise / (discs - 1)) / 2, z + gap / 2, candy(0xffffff, { rough: 0.3 }), { solid: true });
-        }
-    },
-    // 10. Glitch Keys: keys blink in and out over the void
-    glitch(s, rng, Z, th, zA, zB) {
-        const list = [], rows = Math.floor((zB - zA - 4) / 8.5);
-        for (let r = 0; r < rows; r++) {
-            const top = s.y0 + (s.rise * r) / rows;
-            for (const x of [-12, 0, 12]) {
-                if ((r * 7 + x) % 3 === 0 && r % 3) continue;
-                list.push({ x: x + (r % 2 ? 3 : -3), z: zA + 5 + r * 8.5, top, size: 1.5, period: 3.6, on: 0.62, phase: ((r * 0.9 + (x + 12) * 0.05) % 3.6) });
-            }
-        }
-        blinkKeys(Z, th, list, rng);
-        for (let k = 1; k < 4; k++) blinkLaser(Z, 0x3affd8, zA + k * (zB - zA) / 4, s.y0 + (s.rise * k) / 4 - 2, 10, 3.2, 0.35, k * 1.1);
-    },
-    // 11. Mouse Click Crushers: giant mice slam down across the path
-    crushers(s, rng, Z, th, zA, zB) {
-        const n = 6, step = (zB - zA) / n;
-        for (let k = 0; k < n; k++) {
-            const top = s.y0 + (s.rise * k) / (n - 1), zc = zA + (k + 0.5) * step;
-            kbSlab(Z, th, 0, zc, STAGE_W - 4, step - 1, top, rng, { thick: Math.max(4, top - s.y0 + 4) });
-            const cols = k % 2 ? [-12, 12] : [-16, 0, 16];
-            cols.forEach((x, i) => crusher(Z, x, zc, cols.length === 2 ? 22 : 15, 14, top, 3.1 + (k % 3) * 0.3, k * 0.8 + i * 1.05));
-        }
-    },
-    // 12. RGB Gaming Rig: pistons, sweeping lasers and conveyors on a backlit keyboard
-    rgb(s, rng, Z, th, zA, zB) {
-        const y = s.y0;
-        kbSlab(Z, th, 0, zA + 14, STAGE_W - 4, 26, y, rng, { thick: 4 });
-        sweepLaser(Z, 0xff3a5a, zA + 14, y + 0.6, y + 9, 2.4, 0);
-        const list = [];
-        for (let r = 0; r < 8; r++) for (const x of [-12, 0, 12]) {
-            if ((r + x / 12 + 3) % 2 === 0) continue;
-            list.push({ x, z: zA + 33 + r * 8.5, base: y + 1 + r * 0.6, amp: 7, size: 1.6, period: 2.4, phase: r * 0.45 + x * 0.03 });
-        }
-        pistons(Z, th, list, rng);
-        conveyor(Z, 0, zA + 114, 16, 28, y + 7, new V3(0, 0, -24), th);
-        kbSlab(Z, th, 0, zA + 140, STAGE_W - 4, 16, y + 9, rng, { thick: 4 });
-        blinkLaser(Z, 0x3affff, zA + 136, y + 9, 9, 2.2, 0.5, 0.4);
-        sweepLaser(Z, 0xff3ad8, zA + 144, y + 9.6, y + 18, 2.2, 1.1);
-        const list2 = [];
-        for (let r = 0; r < 6; r++) list2.push({ x: (r % 2 ? 9 : -9), z: zA + 158 + r * 8, base: y + 10 + r * 0.6, amp: 5, size: 1.8, period: 2.2, phase: r * 0.6 });
-        pistons(Z, th, list2, rng);
-    },
-    // 13. Jelly Bounce: bounce pads launch you over big gaps, spinners on the landings
-    jelly(s, rng, Z, th, zA, zB) {
-        const y = s.y0, cols = [0xa8ff5a, 0xff8ae0, 0xffe05a, 0x5ae0ff];
-        let z = zA + 8, top = y;
-        // Bounce pad -> landing (with a spinner on the later ones), four times over
-        for (let k = 0; k < 4; k++) {
-            jellyPad(Z, k % 2 ? 8 : -8, z, top, 5, 92, cols[k % cols.length]);
-            z += 30; top += (s.rise - 2) / 4;
-            kbSlab(Z, th, k % 2 ? -6 : 6, z, 22, 14, top, rng, { thick: 3 });
-            if (k >= 1) spinner(Z, k % 2 ? -6 : 6, z, top, 18, 1.6, (k % 2 ? 1 : -1) * 1.6, k, cols[(k + 1) % cols.length], false);
-            z += 12;
-        }
-        // A jelly block bobbing up and down, then a last key before the wall
-        const list = [{ x: 0, z: z + 4, top: top + 1, w: 8, d: 8, ay: 3, period: 2.6, phase: 0 }];
-        sliders(Z, list, () => { const g = new T.Group(); const m = new T.Mesh(new RoundedBoxGeometry(8, 1.6, 8, 2, 0.6), candy(0xc89aff, { rough: 0.1, clear: true })); m.position.y = -0.8; g.add(m); return g; });
-        keyStone(Z, th, -8, Math.min(zB - 6, z + 22), 1.6, s.y1 - 1, rng);
-    },
-    // 14. Sugar Storm: narrow walkways, wind gusts and keys falling from the sky
-    storm(s, rng, Z, th, zA, zB) {
-        const y = s.y0;
-        const segs = [[0, 0, 40, 10], [-14, 44, 36, 8], [8, 86, 40, 8], [-6, 130, 30, 10], [10, 164, 26, 12], [0, 194, 20, 14]];
-        const tops = [];
-        segs.forEach(([x, dz, len, w], i) => {
-            const top = y + (s.rise * i) / (segs.length - 1);
-            tops.push([zA + dz, zA + dz + len, top]);
-            kbSlab(Z, th, x, zA + dz + len / 2, w, len, top, rng, { thick: 3 });
-            if (i < segs.length - 1) {
-                const nx = segs[i + 1][0];
-                plainBox(Z, Math.abs(nx - x) + 6, 1, 4, (x + nx) / 2, top + (s.rise / (segs.length - 1)) / 2 - 0.5, zA + dz + len + 2, candy(th.case, { rough: 0.4 }), { solid: true });
-            }
-            windZone(Z, zA + dz, zA + dz + len, top, top + 20, 7, i * 1.7, 14 + i * 3);
-        });
-        const floorAt = (zz) => { for (const [a, b, t] of tops) if (zz >= a && zz <= b + 4) return t; return y; };
-        const spots = [];
-        segs.forEach(([x, dz, len], i) => { for (let k = 0; k < 3; k++) spots.push({ x: x + (rng() - 0.5) * 4, z: zA + dz + (k + 0.5) * len / 3, phase: i * 0.7 + k * 1.3 }); });
-        fallingKeys(Z, th, spots, 3.4, floorAt, rng);
-        // Lightning flashes in the sky
-        const flash = new T.Mesh(new T.PlaneGeometry(400, 300), new T.MeshBasicMaterial({ color: 0xeaf4ff, transparent: true, opacity: 0, depthWrite: false, toneMapped: false }));
-        flash.position.set(0, s.top + 80, (zA + zB) / 2); flash.rotation.x = Math.PI / 2; zoneGroup(Z).add(flash);
-        hz(Z, (t) => { const c = cyc(t, 9, 0.3) * 9; flash.material.opacity = c < 0.12 || (c > 0.25 && c < 0.33) ? 0.6 : 0; });
-    },
-    // 15. Rainbow Finale: a bit of everything on a rainbow keyboard
-    finale(s, rng, Z, th, zA, zB) {
-        const y = s.y0;
-        kbSlab(Z, th, 0, zA + 12, STAGE_W - 4, 22, y, rng, { thick: 4 });
-        spinner(Z, 0, zA + 12, y, 36, 1.6, 1.8, 0, 0xffe05a, true);
-        const list = [];
-        for (let r = 0; r < 6; r++) for (const x of [-10, 4]) list.push({ x: x + (r % 2) * 6, z: zA + 30 + r * 8.5, top: y + 1 + r * 0.8, size: 1.4, period: 3, on: 0.58, phase: r * 0.55 + (x > 0 ? 1.4 : 0) });
-        blinkKeys(Z, th, list, rng);
-        const top2 = y + 6;
-        const steps = 6, zr = zA + 86, step = 8;
-        for (let k = 0; k < steps; k++) kbSlab(Z, th, 0, zr + (k + 0.5) * step, STAGE_W - 4, step, top2 + k * 0.9, rng, { thick: 4 });
-        const floorRamp = (z) => top2 + Math.max(0, Math.min(steps - 1, Math.floor((z - zr) / step))) * 0.9;
-        gumballs(Z, [{ x: -10, r: 3.6, speed: 26, every: 2.4, count: 2, phase: 0, wobble: 2 }, { x: 10, r: 3.6, speed: 30, every: 2.1, count: 2, phase: 1, wobble: 2 }], zr, zr + steps * step, floorRamp, rng);
-        const top3 = top2 + steps * 0.9;
-        kbSlab(Z, th, 0, zA + 150, STAGE_W - 4, 20, top3, rng, { thick: 4 });
-        sweepLaser(Z, 0xffe05a, zA + 146, top3 + 0.6, top3 + 9, 2.2, 0.5);
-        blinkLaser(Z, 0xff5ad8, zA + 156, top3, 9, 2.6, 0.45, 1.2);
-        const crusherTop = top3;
-        crusher(Z, -10, zA + 176, 18, 12, crusherTop, 3, 0.2);
-        crusher(Z, 10, zA + 176, 18, 12, crusherTop, 3, 1.7);
-        kbSlab(Z, th, 0, zA + 176, STAGE_W - 4, 16, crusherTop, rng, { thick: 4 });
-        if (zA + 194 < zB) kbSlab(Z, th, 0, (zA + 186 + zB) / 2, STAGE_W - 4, zB - zA - 186, s.y1, rng, { thick: 4 });
-    },
-};
 function buildStage(s) {
-    const rng = rngFrom(100 + s.i * 37), Z = s.i, th = s.theme;
-    const zA = s.zS + 20, zB = s.zE - 24;
-    stageShell(s, rng);
-    landings(s, rng);
-    BUILD[s.type](s, rng, Z, th, zA, zB);
+    const rng = rngFrom(100 + s.i * 37), Z = s.i, th = s.theme, plan = PLAN[s.i] || PLAN[0];
+    const n = plan.length, a0 = s.zS + 20, b0 = s.zE - 24;
+    const secLen = (b0 - a0 - (n - 1) * REST) / n;
+    const hK = (k) => s.y0 + s.rise * k / n;
+    const floorAt = (z) => hK(n * Math.min(1, Math.max(0, (z - a0) / (b0 - a0))));
+    stageShell(s, rng, floorAt);
+    // Entry landing (keys on top of the wall before) and the first checkpoint
+    if (s.i > 0) keyGrid(Z, th, 0, s.zS + 10, STAGE_W, 20, s.y0, rng);
+    else kbSlab(Z, th, 0, s.zS + 10, STAGE_W - 4, 20, s.y0, rng, { thick: 4 });
+    checkpoint(Z, s, 0, 0, s.y0, s.zS + 14);
+    let a = a0;
+    for (let k = 0; k < n; k++) {
+        const b = a + secLen;
+        SEC[plan[k][0]]({ s, Z, th, rng, a, b, hA: hK(k), hB: hK(k + 1), d: plan[k][1] });
+        if (k < n - 1) {
+            kbSlab(Z, th, 0, b + REST / 2, STAGE_W - 4, REST, hK(k + 1), rng, { thick: 4 });
+            checkpoint(Z, s, k + 1, 0, hK(k + 1), b + REST / 2);
+            a = b + REST;
+        }
+    }
+    // The foot of the wall
+    kbSlab(Z, th, 0, s.zE - 12, STAGE_W - 4, 24, s.y1, rng, { thick: 8 });
+    checkpoint(Z, s, n, CLIMB_X, s.y1, s.zE - 14);
     endWall(s, rng);
 }
 

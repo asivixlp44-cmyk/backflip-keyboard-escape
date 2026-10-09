@@ -1,47 +1,49 @@
 // Procedural soundtrack and sound effects (Web Audio, no asset files).
-// "Sugar Keys": an original 132 BPM candy-pop / future-bass track in F major for the keyboard
+// "Sugar Keys": an original 128 BPM candy-pop / future-bass track in F major for the keyboard
 // world. Its hi-hats are keyboard clacks typing away, the snare is a space-bar thock, a glassy
-// bell carries the hook over Fmaj7 - C - Dm7 - Bbmaj7, bubbly chiptune plucks arpeggiate, and the
-// drops add sidechain-pumped supersaws, a sub bass and a sparkle sweep. 32 bars: intro, build,
-// drop, music-box break, build, drop 2, looping.
+// lead sings the hook over the royal-road progression (Bbmaj7 - C7 - Am7 - Dm7), bubbly chiptune plucks
+// arpeggiate, the bass bounces in octaves and the drops add sidechain-pumped supersaws and bells.
+// 36 bars: music-box intro, verse, build, drop, break, build, drop 2, looping.
 
 let ctx = null, master, musicBus, musicOut, duckFilter, sfxBus, reverb, delay, pump;
 let noiseBuf = null;
 let musicOn = false, schedTimer = null, step = 0, nextTime = 0, ducked = false, intensity = 0;
 const settings = { music: 0.6, sfx: 0.8, master: 1, muted: false };
-try { Object.assign(settings, JSON.parse(localStorage.getItem('bke_audio') || '{}')); } catch (e) { /* defaults */ }
+try { Object.assign(settings, JSON.parse(localStorage.getItem('bke_audio2') || '{}')); } catch (e) { /* defaults */ }
 
-const BPM = 132, STEP = 60 / BPM / 4;
+const BPM = 128, STEP = 60 / BPM / 4;
 const midi = (n) => 440 * Math.pow(2, (n - 69) / 12);
+// The "royal road" progression (IV - V - iii - vi in F) that so many catchy J-pop / kawaii songs ride
 const CHORDS = [
-    { root: 41, notes: [65, 69, 72, 76] },   // Fmaj7
-    { root: 36, notes: [64, 67, 72, 76] },   // C/E
-    { root: 38, notes: [62, 65, 69, 72] },   // Dm7
-    { root: 34, notes: [62, 65, 70, 74] },   // Bbmaj7
+    { root: 34, notes: [58, 62, 65, 69] },   // Bbmaj7
+    { root: 36, notes: [60, 64, 67, 70] },   // C7
+    { root: 33, notes: [57, 60, 64, 67] },   // Am7
+    { root: 38, notes: [57, 62, 65, 69] },   // Dm7
 ];
-// The bell hook, one phrase per chord: [step, midi, length]
+// The hook, one phrase per chord: [step, midi, length]. A: the main hook, B: the answer in drop 2
 const HOOK_A = [
-    [[0, 84, 2], [2, 81, 2], [4, 84, 2], [6, 89, 2], [8, 88, 2], [10, 84, 2], [12, 81, 2], [14, 79, 2]],
-    [[0, 79, 2], [2, 88, 2], [4, 86, 2], [6, 84, 2], [8, 79, 4], [12, 76, 2], [14, 79, 2]],
-    [[0, 81, 2], [2, 77, 2], [4, 81, 2], [6, 86, 2], [8, 84, 2], [10, 81, 2], [12, 77, 2], [14, 81, 2]],
-    [[0, 82, 2], [2, 81, 2], [4, 77, 2], [6, 86, 2], [8, 84, 4], [12, 81, 2], [14, 84, 2]],
+    [[0, 74, 2], [3, 77, 2], [6, 76, 1], [8, 74, 2], [10, 72, 2], [12, 69, 2], [14, 72, 2]],
+    [[0, 72, 2], [3, 76, 2], [6, 79, 2], [8, 77, 1], [9, 76, 1], [10, 74, 2], [12, 72, 4]],
+    [[0, 72, 2], [3, 74, 2], [6, 76, 2], [8, 76, 1], [10, 77, 2], [12, 79, 2], [14, 81, 2]],
+    [[0, 81, 3], [3, 79, 1], [4, 77, 2], [6, 76, 2], [8, 74, 6], [14, 72, 2]],
 ];
 const HOOK_B = [
-    [[0, 89, 3], [3, 88, 1], [4, 84, 2], [6, 89, 2], [8, 91, 2], [10, 89, 2], [12, 88, 2], [14, 84, 2]],
-    [[0, 88, 3], [3, 86, 1], [4, 84, 2], [6, 88, 2], [8, 91, 4], [12, 88, 2], [14, 86, 2]],
-    [[0, 86, 2], [2, 89, 2], [4, 93, 2], [6, 91, 2], [8, 89, 2], [10, 86, 2], [12, 84, 2], [14, 86, 2]],
-    [[0, 86, 2], [2, 84, 2], [4, 82, 2], [6, 86, 2], [8, 89, 4], [12, 88, 2], [14, 89, 2]],
+    [[0, 77, 2], [2, 79, 2], [4, 81, 2], [6, 79, 1], [7, 77, 1], [8, 74, 2], [10, 77, 2], [12, 81, 2], [14, 84, 2]],
+    [[0, 84, 3], [3, 82, 1], [4, 81, 2], [6, 79, 2], [8, 76, 4], [12, 79, 2], [14, 81, 2]],
+    [[0, 81, 2], [2, 79, 2], [4, 76, 2], [6, 72, 2], [8, 76, 2], [10, 79, 2], [12, 84, 2], [14, 81, 2]],
+    [[0, 81, 2], [2, 77, 2], [4, 81, 2], [6, 86, 4], [10, 84, 2], [12, 81, 4]],
 ];
 // Typing rhythm for the keyboard-clack hats: accent per 16th (0 = rest)
 const TYPING = [0.9, 0.35, 0.6, 0.3, 0.8, 0, 0.55, 0.4, 0.9, 0.35, 0.5, 0.45, 0.75, 0.3, 0.6, 0];
-const STABS = [0, 3, 6, 8, 10, 14];
+// Song map, 36 bars: intro (music box plays the hook), verse, build, drop, break, build, drop 2
 const SECTION = (bar) => {
-    const b = bar % 32;
+    const b = bar % 36;
     if (b < 4) return 'intro';
-    if (b < 8) return 'build';
-    if (b < 16) return 'drop';
-    if (b < 20) return 'break';
-    if (b < 24) return 'build';
+    if (b < 8) return 'verse';
+    if (b < 12) return 'build';
+    if (b < 20) return 'drop';
+    if (b < 24) return 'break';
+    if (b < 28) return 'build';
     return 'drop2';
 };
 
@@ -96,7 +98,7 @@ function applyVolumes() {
     musicOut.gain.setTargetAtTime(settings.muted ? 0 : settings.music * 0.5 * m * (ducked ? 0.6 : 1), t, 0.08);
     sfxBus.gain.setTargetAtTime(settings.sfx * m, t, 0.05);
 }
-function save() { try { localStorage.setItem('bke_audio', JSON.stringify(settings)); } catch (e) { /* ignore */ } }
+function save() { try { localStorage.setItem('bke_audio2', JSON.stringify(settings)); } catch (e) { /* ignore */ } }
 export function getVolumes() { return { ...settings }; }
 export function setVolume(kind, v) {
     settings[kind] = Math.max(0, Math.min(1, v));
@@ -106,6 +108,8 @@ export function setVolume(kind, v) {
 // The "Sounds" button: music on / off
 export function toggleMusic() { settings.muted = !settings.muted; save(); applyVolumes(); return !settings.muted; }
 export const musicMuted = () => !!settings.muted;
+// Browsers keep audio off until the first click or key press
+export const audioSuspended = () => !ctx || ctx.state !== 'running';
 // Menus open: the music goes muffled and a little quieter
 export function setMusicDuck(on) {
     if (!ctx || on === ducked) return;
@@ -238,21 +242,49 @@ function impact(t) {
     noise(t, 1.4, 'highpass', 3500, 0.5, 0.13, reverb);
 }
 
+// The lead: two detuned squares and a saw with a soft filter and delayed vibrato, plus a sine an
+// octave up for sparkle; it carries the hook through the drops
+function lead(t, n, dur, gain) {
+    const g = ctx.createGain(), f = ctx.createBiquadFilter();
+    f.type = 'lowpass'; f.Q.value = 1.6;
+    f.frequency.setValueAtTime(5600, t); f.frequency.exponentialRampToValueAtTime(2600, t + Math.min(0.4, dur));
+    env(g, t, 0.008, gain, 0.12, gain * 0.75, 0.09, t + dur);
+    f.connect(g); g.connect(musicBus); g.connect(delay); g.connect(reverb);
+    const vib = ctx.createOscillator(), vg = ctx.createGain();
+    vib.frequency.value = 5.6; vg.gain.setValueAtTime(0, t); vg.gain.linearRampToValueAtTime(midi(n) * 0.011, t + Math.min(0.28, dur));
+    vib.connect(vg);
+    for (const [type, det, k, oct] of [['square', -8, 0.45, 0], ['square', 8, 0.45, 0], ['sawtooth', 0, 0.22, 0], ['sine', 0, 0.3, 12]]) {
+        const o = ctx.createOscillator(), og = ctx.createGain();
+        o.type = type; o.detune.value = det; og.gain.value = k;
+        o.frequency.setValueAtTime(midi(n + oct), t);
+        vg.connect(o.frequency);
+        o.connect(og).connect(f); o.start(t); o.stop(t + dur + 0.18);
+    }
+    vib.start(t); vib.stop(t + dur + 0.18);
+}
+function hookNotes(sec, bar) { return (sec === 'drop2' ? HOOK_B : HOOK_A)[bar % 4]; }
+
 function playStep(s, t) {
-    const bar = Math.floor(s / 16), i = s % 16, b = bar % 32, sec = SECTION(bar), chord = CHORDS[bar % 4];
+    const bar = Math.floor(s / 16), i = s % 16, b = bar % 36, sec = SECTION(bar), chord = CHORDS[bar % 4];
     if (sec === 'intro' || sec === 'break') {
-        if (i === 0) pad(t, chord.notes, STEP * 16, 0.04, sec === 'intro' ? 700 + (b % 4) * 350 : 1600);
-        if (i === 0) bass(t, chord.root + 12, STEP * 14, 0.12);
-        // Somebody typing gently
-        if (TYPING[i] && (sec === 'intro' || i % 2 === 0)) clack(t, 0.05 * TYPING[i]);
-        if (sec === 'intro') {
-            if (i % 2 === 0) { const arp = [0, 1, 2, 3, 2, 1, 3, 2][(i / 2) % 8]; pluck(t, chord.notes[arp], 0.045); }
-        } else {
-            // Music-box version of the hook
-            for (const [at, n] of HOOK_A[bar % 4]) if (at === i) musicBox(t, n, 0.09);
-            if (i === 4 || i === 12) thock(t, 0.08);
-        }
-        if (b === 3 && i >= 12) snare(t, 0.05 + (i - 12) * 0.02);
+        // Pad, long bass notes, somebody typing gently and the hook on a music box
+        if (i === 0) pad(t, chord.notes, STEP * 16, 0.045, sec === 'intro' ? 700 + (b % 4) * 400 : 1800);
+        if (i === 0) bass(t, chord.root + 12, STEP * 14, 0.13);
+        if (TYPING[i] && i % 2 === 0) clack(t, 0.05 * TYPING[i]);
+        for (const [at, n] of HOOK_A[bar % 4]) if (at === i) musicBox(t, n + 12, 0.1);
+        if (sec === 'break' && (i === 4 || i === 12)) thock(t, 0.08);
+        if ((b === 3 || b === 23) && i >= 12) snare(t, 0.05 + (i - 12) * 0.02);
+        return;
+    }
+    if (sec === 'verse') {
+        // Light groove: kick on the beat, claps on 2 and 4, plucky arps, the bass bouncing in octaves
+        if (i % 4 === 0) kick(t, 0.6);
+        if (i === 4 || i === 12) { clap(t, 0.12); thock(t, 0.07); }
+        if (TYPING[i]) clack(t, 0.06 * TYPING[i]);
+        pluck(t, chord.notes[[0, 1, 2, 3, 2, 1, 3, 2][(i >> 1) % 8]] + 12, i % 2 ? 0.02 : 0.035);
+        if (i % 2 === 0) bass(t, chord.root + (i % 4 === 2 ? 24 : 12), STEP * 1.6, 0.2);
+        if (i === 0) pad(t, chord.notes, STEP * 16, 0.03, 1200);
+        if (bar % 4 === 3 && i >= 8) for (const [at, n, l] of HOOK_A[3]) if (at === i) lead(t, n, STEP * l, 0.06);
         return;
     }
     if (sec === 'build') {
@@ -264,21 +296,26 @@ function playStep(s, t) {
         if (k < 3 && i % 4 === 0) kick(t, 0.6);
         if (i === 0) supersaw(t, chord.notes, STEP * 14, 0.03, 800 + k * 900);
         if (TYPING[i]) clack(t, 0.06 * TYPING[i]);
-        if (i % 2 === 0) pluck(t, chord.notes[(i / 2) % 4], 0.04);
+        if (i % 2 === 0) pluck(t, chord.notes[(i / 2) % 4] + 12, 0.035);
         if (i === 0) bass(t, chord.root + 12, STEP * 12, 0.16);
+        // The hook teases in on the last bar
+        if (k === 3) for (const [at, n, l] of HOOK_A[bar % 4]) if (at === i) lead(t, n, STEP * l, 0.07);
         return;
     }
-    // Drops: the full groove
-    if ((b === 8 || b === 24) && i === 0) impact(t);
+    // Drops: four on the floor, clap + space-bar thock, typing hats, pumping supersaw chords, the
+    // bass bouncing in octaves, the lead singing the hook (bells double it in drop 2)
+    if ((b === 12 || b === 28) && i === 0) impact(t);
     if (i % 4 === 0) kick(t, 0.85);
     if (i === 4 || i === 12) { clap(t, 0.17); thock(t, 0.1); }
     if (TYPING[i]) clack(t, 0.075 * TYPING[i]);
-    if (STABS.includes(i)) {
-        supersaw(t, chord.notes, STEP * 2.2, 0.045, 2600);
-        bass(t, chord.root + (i === 6 || i === 14 ? 12 : 0), STEP * 2.4, 0.3);
+    if (i % 4 === 2) noise(t, 0.12, 'highpass', 7000, 0.7, 0.05, musicBus);
+    if (i % 4 === 0) supersaw(t, chord.notes.map((n) => n + 12), STEP * 3.6, 0.04, 3200);
+    if (i % 2 === 0) bass(t, chord.root + (i % 4 === 2 ? 24 : 12), STEP * 1.7, 0.28);
+    for (const [at, n, l] of hookNotes(sec, bar)) if (at === i) {
+        lead(t, n, STEP * l, 0.1);
+        if (sec === 'drop2') bell(t, n + 12, STEP * l, 0.045);
     }
-    for (const [at, n, l] of (sec === 'drop2' ? HOOK_B : HOOK_A)[bar % 4]) if (at === i) bell(t, n, STEP * l, 0.12);
-    if (i % 2 === 1) pluck(t, chord.notes[(i >> 1) % 4] + 12, 0.028);
+    if (i % 2 === 1) pluck(t, chord.notes[(i >> 1) % 4] + 24, 0.018);
     if (intensity > 0.5 && i % 4 === 2) bell(t, chord.notes[(i >> 2) % 4] + 24, STEP, 0.03);
     if (i === 14 && bar % 4 === 3) { snare(t, 0.08); snare(t + STEP / 2, 0.1); }
 }

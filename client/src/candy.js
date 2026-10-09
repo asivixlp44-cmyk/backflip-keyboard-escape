@@ -1,6 +1,7 @@
 // Candy decorations (donuts, ice creams, lollipops, peppermints ...) drawn as instanced meshes,
 // plus the wearable items (wings, halos, crown, jetpack) and the shoe models.
 import { T, V3, scene, candy, mat, NEON_BOOST } from './engine.js';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { KEYCAP, keyMaterial } from './keys.js';
 import {
     swirlTexture, peppermintTexture, stripeTexture, waffleTexture, cookieTexture, chocoBarTexture, rainbowTexture,
@@ -144,11 +145,14 @@ const batches = new Map();
 const tmpM = new T.Matrix4(), baseM = new T.Matrix4(), q = new T.Quaternion(), e = new T.Euler(), col = new T.Color();
 let decoRng = rngFrom(4242);
 // One candy at (x, y, z), rotated (rx, ry, rz), uniformly scaled s; tint picks the colour of the
-// tintable parts (frosting, scoops ...)
-export function decor(zone, name, x, y, z, rx, ry, rz, s, tint) {
+// tintable parts (frosting, scoops ...). yaw turns the whole thing about y afterwards.
+const qYaw = new T.Quaternion(), yAxis = new V3(0, 1, 0);
+export function decor(zone, name, x, y, z, rx, ry, rz, s, tint, yaw) {
     const parts = TYPES[name];
     if (!parts) return;
-    baseM.compose(new V3(x, y, z), q.setFromEuler(e.set(rx || 0, ry || 0, rz || 0)), new V3(s || 1, s || 1, s || 1));
+    q.setFromEuler(e.set(rx || 0, ry || 0, rz || 0));
+    if (yaw) q.premultiply(qYaw.setFromAxisAngle(yAxis, yaw));
+    baseM.compose(new V3(x, y, z), q, new V3(s || 1, s || 1, s || 1));
     parts.forEach((p, i) => {
         const key = zone + '|' + name + '|' + i;
         let b = batches.get(key);
@@ -390,3 +394,17 @@ export function rainbowMaterial() {
     m.color.multiplyScalar(NEON_BOOST * 0.7);
     return m;
 }
+
+// Gold trophy over every Wins pad: one merged geometry (cup, handles, stem, base)
+export const TROPHY_GEO = (() => {
+    const prof = [[0, 1.0], [0.55, 1.0], [0.9, 1.25], [1.05, 1.7], [1.12, 2.25], [1.0, 2.32], [0.9, 2.15], [0.84, 1.8], [0.68, 1.42], [0.4, 1.16], [0, 1.16]].map(([r, y]) => new T.Vector2(r, y));
+    const cup = new T.LatheGeometry(prof, 22);
+    const stem = new T.CylinderGeometry(0.18, 0.3, 0.6, 12).translate(0, 0.72, 0);
+    const base = new T.CylinderGeometry(0.75, 0.88, 0.45, 22).translate(0, 0.22, 0);
+    const h1 = new T.TorusGeometry(0.42, 0.11, 8, 16, Math.PI).rotateZ(-Math.PI / 2).translate(1.06, 1.86, 0);
+    const h2 = h1.clone().rotateY(Math.PI);
+    const g = mergeGeometries([cup, stem, base, h1, h2]);
+    g.computeVertexNormals();
+    return g;
+})();
+export const GOLD = new T.MeshStandardMaterial({ color: 0xffc828, roughness: 0.22, metalness: 0.85, emissive: 0x6a4000, emissiveIntensity: 0.25 });

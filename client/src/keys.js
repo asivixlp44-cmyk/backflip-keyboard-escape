@@ -113,12 +113,63 @@ export function keyMaterial(ink, glow, rgb) {
 // ----- static keys, batched per zone (lobby / stage) and per look -----
 const batches = new Map();
 // Adds one keycap: top centre at (x, top, z); size scales its width / depth (1 = a normal key);
-// letter: index into LETTERS, -1 for none (space bars)
-export function addKey(zone, look, x, top, z, color, letter, sx, sz, sy) {
-    const k = zone + '|' + look.ink + '|' + (look.glow ? 1 : 0) + '|' + (look.rgb ? 1 : 0);
+// letter: index into LETTERS, -1 for none (space bars). wall: the key stands on a wall facing -z.
+export function addKey(zone, look, x, top, z, color, letter, sx, sz, sy, wall) {
+    const k = zone + '|' + look.ink + '|' + (look.glow ? 1 : 0) + '|' + (look.rgb ? 1 : 0) + '|' + (wall ? 'w' : 'f');
     let b = batches.get(k);
-    if (!b) { b = { zone, look, list: [] }; batches.set(k, b); }
+    if (!b) { b = { zone, look, wall: !!wall, list: [] }; batches.set(k, b); }
     b.list.push(x, top, z, sx || 1, sy || 1, sz || 1, color, letter ?? -1);
+}
+// A key set into a wall facing -z (the giant keyboard on the end walls): face at zFace
+export function addWallKey(zone, look, x, y, zFace, color, letter, size) {
+    addKey(zone, look, x, y, zFace, color, letter, size, size, 1, true);
+}
+
+// ----- keys you stand on press down and spring back, like a real keyboard -----
+const CELL = 4;
+const keyCells = new Map();
+const pressed = new Set();
+function registerKey(entry) {
+    const c = Math.floor(entry.x / CELL) + '|' + Math.floor(entry.z / CELL);
+    let list = keyCells.get(c);
+    if (!list) { list = []; keyCells.set(c, list); }
+    list.push(entry);
+}
+// The floor key under a point (feet at y), or null
+export function keyAt(x, y, z) {
+    const cx = Math.floor(x / CELL), cz = Math.floor(z / CELL);
+    let best = null, bd = 1e9;
+    for (let dx = -1; dx <= 1; dx++) for (let dz = -1; dz <= 1; dz++) {
+        const list = keyCells.get((cx + dx) + '|' + (cz + dz));
+        if (!list) continue;
+        for (const k of list) {
+            if (Math.abs(k.top - y) > 0.45) continue;
+            const ax = Math.abs(x - k.x), az = Math.abs(z - k.z);
+            if (ax > 1.75 * k.sx || az > 1.75 * k.sz) continue;
+            if (ax + az < bd) { bd = ax + az; best = k; }
+        }
+    }
+    return best;
+}
+// Press a key (returns true when it wasn't already down)
+export function pressKey(k) {
+    if (!k) return false;
+    const fresh = !pressed.has(k) || k.t < 0;
+    k.t = 0.16;
+    pressed.add(k);
+    return fresh;
+}
+export function updatePressed(dt) {
+    for (const k of pressed) {
+        k.t -= dt;
+        // Down while held, then a quick spring back with a little overshoot
+        let depth = k.t > 0 ? 0.34 : 0.34 * Math.cos(Math.min(Math.PI, -k.t * 22)) * Math.exp(k.t * 18);
+        if (k.t < -0.2) { depth = 0; pressed.delete(k); }
+        m4.compose(v0.set(k.x, k.top - Math.max(-0.08, depth), k.z), q0, s0.set(k.sx, k.sy, k.sz));
+        k.mesh.setMatrixAt(k.i, m4);
+        k.mesh.instanceMatrix.addUpdateRange(k.i * 16, 16);
+        k.mesh.instanceMatrix.needsUpdate = true;
+    }
 }
 // Fills a w x d area (centre x, z) with keys whose tops are at `top`. pick(i, j, rng) -> colour
 export function keyGrid(zone, look, x, z, w, d, top, rng, pick, opts) {
@@ -134,6 +185,7 @@ export function keyGrid(zone, look, x, z, w, d, top, rng, pick, opts) {
 }
 export const randomLetter = (rng) => letterIndex(ALPHA[Math.floor(rng() * ALPHA.length)]);
 const m4 = new T.Matrix4(), q0 = new T.Quaternion(), v0 = new T.Vector3(), s0 = new T.Vector3(), c0 = new T.Color();
+const qWall = new T.Quaternion().setFromAxisAngle(new T.Vector3(1, 0, 0), -Math.PI / 2);
 // Builds the instanced meshes; parentFor(zone) gives the group each zone's keys go into
 export function flushKeys(parentFor) {
     for (const b of batches.values()) {
@@ -143,10 +195,11 @@ export function flushKeys(parentFor) {
         const letters = new Float32Array(n);
         for (let i = 0; i < n; i++) {
             const o = i * 8, L = b.list;
-            m4.compose(v0.set(L[o], L[o + 1], L[o + 2]), q0, s0.set(L[o + 3], L[o + 4], L[o + 5]));
+            m4.compose(v0.set(L[o], L[o + 1], L[o + 2]), b.wall ? qWall : q0, s0.set(L[o + 3], L[o + 4], L[o + 5]));
             mesh.setMatrixAt(i, m4);
             mesh.setColorAt(i, c0.set(L[o + 6]));
             letters[i] = L[o + 7];
+            if (!b.wall) registerKey({ mesh, i, x: L[o], top: L[o + 1], z: L[o + 2], sx: L[o + 3], sy: L[o + 4], sz: L[o + 5], t: -1 });
         }
         mesh.geometry = KEYCAP.clone();
         mesh.geometry.setAttribute('aLetter', new T.InstancedBufferAttribute(letters, 1));

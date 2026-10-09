@@ -232,7 +232,7 @@ $('#btnLevel').addEventListener('click', buyLevel);
 packBtns.forEach((b, i) => b.addEventListener('click', () => buyPack(i)));
 $('#btnRebirth').addEventListener('click', () => openModal('rebirth'));
 $('#btnInventory').addEventListener('click', () => openModal('inventory', 'items'));
-$('#btnSounds').addEventListener('click', () => { const on = toggleMusic(); toast(on ? '🎵 Music on' : '🔇 Music off', '#ff8ad8'); });
+$('#btnSounds').addEventListener('click', () => openModal('sounds'));
 $('#btnFree').addEventListener('click', () => openModal('free'));
 $('#btnTeleport').addEventListener('click', () => openModal('teleport'));
 $('#btnTreadmill').addEventListener('click', () => actions.autoTrain());
@@ -328,6 +328,9 @@ function renderModal() {
     } else if (k === 'settings') {
         title.textContent = 'Settings';
         renderSettings(body);
+    } else if (k === 'sounds') {
+        title.textContent = 'Sounds';
+        renderSounds(body);
     }
 }
 
@@ -617,6 +620,25 @@ function renderFriends(body) {
             }));
         }
     });
+}
+// Music on / off and the two volumes
+function renderSounds(body) {
+    const on = !musicMuted(), vols = getVolumes();
+    const b = document.createElement('button');
+    b.className = 'btn o ' + (on ? 'g-green' : 'g-grey');
+    b.style.fontSize = '1.6rem'; b.style.padding = '0.5rem';
+    b.textContent = on ? '🎵 Music: ON' : '🔇 Music: OFF';
+    b.addEventListener('click', () => { toggleMusic(); renderModal(); });
+    body.appendChild(b);
+    const w = document.createElement('div');
+    w.className = 'settings';
+    w.innerHTML = `
+        <label class="set-row o1" for="sndMusic"><span>🎵 Music volume</span><input id="sndMusic" type="range" min="0" max="100" value="${Math.round(vols.music * 100)}"></label>
+        <label class="set-row o1" for="sndSfx"><span>🔊 Sound effects</span><input id="sndSfx" type="range" min="0" max="100" value="${Math.round(vols.sfx * 100)}"></label>
+        <p class="note">Now playing: "Sugar Keys", the keyboard's own candy-pop theme 🍭</p>`;
+    w.querySelector('#sndMusic').addEventListener('input', (e) => setVolume('music', e.target.value / 100));
+    w.querySelector('#sndSfx').addEventListener('input', (e) => setVolume('sfx', e.target.value / 100));
+    body.appendChild(w);
 }
 function renderSettings(body) {
     const vols = getVolumes();

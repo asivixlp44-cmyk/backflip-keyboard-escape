@@ -4,17 +4,17 @@ import {
     billboard, buildRig, animRig, airPose, burst, confettiAt, floatText, updateEffects, lerpAngle, updateSky, FOG,
 } from './engine.js';
 import { S, actions, net } from './state.js';
-import { initAudio, startMusic, sfx, setVolume, resetFlips, setMusicIntensity } from './audio.js';
+import { initAudio, startMusic, sfx, setVolume, resetFlips, setMusicIntensity, audioSuspended } from './audio.js';
 import * as BX from './bloxity.js';
 import { createAvatar, loadBase, packAvatar, unpackAvatar, avatarStats } from './avatar.js';
 import { updateMaterials } from './textures.js';
 import { pad, pollGamepad, rumble, onGamepadConnection } from './gamepad.js';
-import { render, setSpeedLines, updateFx, dust, sparkleColumn, ring, fireworks, setQuality, flipBurst, shoeFx, makeTrail, flame } from './fx.js';
+import { render, setSpeedLines, updateFx, dust, sparkleColumn, ring, fireworks, setQuality, flipBurst, shoeFx, makeTrail, flame, updateAmbient } from './fx.js';
 import {
     buildWorld, SPAWN, refreshShop, renderBoards, updateLobbySigns, updateWorld, cullZones, checkpoints, windAt, treadOwned, stageStart,
 } from './world.js';
 import { buildItem } from './candy.js';
-import { redrawAtlas } from './keys.js';
+import { redrawAtlas, keyAt, pressKey, updatePressed } from './keys.js';
 import {
     updateHud, toast, levelUp, showStageTitle, showGoal, showOof, animateCounters, showOffline, openDailyOnJoin, refreshModal,
     closeModal, openModal, promptEl, promptTxtEl, jumpCounter, buyShoe, buyTread, codeResult, showTradeAsk, showTrade, tradeDone,
@@ -34,7 +34,7 @@ const P = {
     dead: false, deadT: 0, shield: 0, stage: -1, moving: false, animPhase: 0, lockToastT: -9,
     jumpsLeft: 1, coyote: 0, lastFlip: -9, jumpPress: -9, jumpHeld: false, flips: 0,
     flipAngle: 0, flipTarget: 0, airTime: 0, lastStep: 0, squash: 1, squashV: 0,
-    cp: { stage: -1, k: 0 }, padLock: false,
+    cp: { stage: -1, k: 0 }, padLock: false, lastClick: 0,
 };
 const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
 let shake = 0;
@@ -377,6 +377,7 @@ class Remote {
         this.phase += dt * (moving ? Math.min(18, 4 + this.vel * 0.2) : 0);
         if (air) airPose(u.body, spinning ? 1 : 0); else if (moving) animRig(u.body, this.phase, 0.85); else animRig(u.body, 0, 0);
         if (this.blox) this.blox.update(dt, { moving, air, speed: this.vel, t });
+        if (!air && r.visible) pressKey(keyAt(r.position.x, r.position.y, r.position.z));
         setItem(r, p.item); setShoe(r, p.shoe); setTrail(r, p.trail);
         if (u.item) u.item.update(t, air);
         u.trail.update(trailAt(r), (moving || air) && r.visible, dt, t);
@@ -680,11 +681,12 @@ function updateCamera(dt) {
     const want = fovBase + speedKick + (!P.onGround && P.vel.y > 30 ? 3 : 0);
     baseFov += (want - baseFov) * Math.min(1, dt * 5);
     if (Math.abs(camera.fov - baseFov) > 0.01) { camera.fov = baseFov; camera.updateProjectionMatrix(); }
-    sun.position.set(P.pos.x + 50, P.pos.y + 100, P.pos.z - 35);
+    sun.position.set(P.pos.x + 40, P.pos.y + 90, P.pos.z - 80);
     sun.target.position.copy(P.pos);
     const s = STAGES[P.stage];
     skyTint.set(s ? s.theme.sky : FOG);
     updateSky(camera.position, t, skyTint, dt);
+    updateAmbient(camera.position, t, s ? s.theme.accent : 0xff8ad8);
 }
 
 // Proximity prompts
@@ -834,10 +836,15 @@ function update(dt) {
         const sdt = dt / n;
         const wasGround = P.ground;
         P.onGround = false; P.ground = null;
+        // Move at the frame's average fall speed so jump arcs come out the same at any frame rate
+        // (every backflip gains 5.3+ studs); a floor or ceiling hit stops the vertical move.
+        let vy = P.vel.y + 0.5 * GRAV * dt;
         for (let i = 0; i < n; i++) {
             moveAxis('x', vx * sdt);
             moveAxis('z', vz * sdt);
-            moveAxis('y', P.vel.y * sdt);
+            const before = P.vel.y;
+            moveAxis('y', vy * sdt);
+            if (P.vel.y !== before) vy = P.vel.y;
         }
         if (!P.onGround && wasGround && P.vel.y <= 0 && P.vel.y > -40 && !wasGround.bounce) {
             const y0 = P.pos.y;
@@ -895,6 +902,7 @@ function update(dt) {
     if (S.name && S.name !== nameLabelText && headLabel) { nameLabelText = S.name; headLabel.userData.set([{ t: S.name, c: '#ffffff', s: '#1c1030', px: 60 }]); }
     updateEffects(dt);
     updateFx(dt);
+    updatePressed(dt);
     updateMaterials(dt);
     for (const fn of tickers) fn(dt, t);
 
@@ -926,7 +934,9 @@ function update(dt) {
         footT -= dt;
         if (sd && sd.fx && P.moving && P.onGround && footT <= 0 && !P.dead) { footT = 0.06; shoeFx(P.pos, sd.fx, sd.glow); }
         const stepN = Math.floor(P.animPhase / Math.PI);
-        if (P.onGround && P.moving && !P.dead && stepN !== P.lastStep) { if (hs > 40 && stepN % 2 === 0) dust(P.pos, 1, 0.5); if (stepN % 2 === 0) sfx('step'); }
+        if (P.onGround && P.moving && !P.dead && stepN !== P.lastStep && hs > 40 && stepN % 2 === 0) dust(P.pos, 1, 0.5);
+        // The key under your feet presses down and clicks
+        if (P.onGround && !P.dead && pressKey(keyAt(P.pos.x, P.pos.y, P.pos.z)) && t - P.lastClick > 0.07) { P.lastClick = t; sfx('step'); }
         P.lastStep = stepN;
         P.squashV += (1 - P.squash) * 180 * dt;
         P.squashV *= Math.exp(-12 * dt);
@@ -1010,6 +1020,8 @@ async function play() {
     teleportLobby();
     showTips();
     toast('Every step = +Speed! Spam JUMP to backflip!', '#7dff6b');
+    // Browsers start with the sound off until you click or press a key
+    setTimeout(() => { if (audioSuspended()) toast('🔊 Click or tap anywhere to turn on the music!', '#ff8ad8'); }, 3500);
     canvas.focus();
     BX.loadingEnd();
 }

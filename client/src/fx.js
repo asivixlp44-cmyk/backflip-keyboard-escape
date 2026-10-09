@@ -308,4 +308,50 @@ export function updateFx(dt) {
     }
 }
 
+// ----- ambient glitter: sparkles drifting up all around the camera, tinted by the stage -----
+const AMB = 260;
+const ambGeo = new T.BufferGeometry();
+{
+    const pos = new Float32Array(AMB * 3), seed = new Float32Array(AMB);
+    for (let i = 0; i < AMB; i++) { pos[i * 3] = Math.random(); pos[i * 3 + 1] = Math.random(); pos[i * 3 + 2] = Math.random(); seed[i] = Math.random(); }
+    ambGeo.setAttribute('position', new T.BufferAttribute(pos, 3));
+    ambGeo.setAttribute('aSeed', new T.BufferAttribute(seed, 1));
+}
+const ambMat = new T.ShaderMaterial({
+    transparent: true, depthWrite: false, blending: T.AdditiveBlending, toneMapped: false,
+    uniforms: { uTime: { value: 0 }, uCam: { value: new V3() }, uColor: { value: new T.Color(0xff8ad8) }, uSize: { value: 260 } },
+    vertexShader: `attribute float aSeed; uniform float uTime; uniform vec3 uCam; uniform float uSize; varying float vA; varying float vS;
+        void main() {
+            vec3 box = vec3(90.0, 60.0, 90.0);
+            vec3 p = position * box;
+            p.y += uTime * (1.2 + aSeed * 2.5);
+            p.x += sin(uTime * 0.5 + aSeed * 20.0) * 2.5;
+            vec3 rel = mod(p - uCam + box * 0.5, box) - box * 0.5;
+            vec4 mv = modelViewMatrix * vec4(uCam + rel, 1.0);
+            gl_Position = projectionMatrix * mv;
+            float tw = 0.5 + 0.5 * sin(uTime * (2.0 + aSeed * 3.0) + aSeed * 40.0);
+            vA = tw * smoothstep(44.0, 14.0, length(rel)) * smoothstep(2.0, 6.0, length(rel));
+            vS = aSeed;
+            gl_PointSize = uSize * (0.35 + aSeed * 0.65) * (0.6 + tw * 0.4) / max(1.0, -mv.z);
+        }`,
+    fragmentShader: `uniform vec3 uColor; varying float vA; varying float vS;
+        void main() {
+            vec2 q = gl_PointCoord - 0.5;
+            float core = pow(max(0.0, 1.0 - length(q) * 2.0), 2.0);
+            float rays = max(0.0, 1.0 - abs(q.x) * 12.0) * max(0.0, 1.0 - abs(q.y) * 2.4) + max(0.0, 1.0 - abs(q.y) * 12.0) * max(0.0, 1.0 - abs(q.x) * 2.4);
+            vec3 c = mix(uColor, vec3(1.0), 0.35 + 0.35 * sin(vS * 31.0));
+            gl_FragColor = vec4(c * 1.6, (core + rays * 0.55) * vA);
+        }`,
+});
+const ambient = new T.Points(ambGeo, ambMat);
+ambient.frustumCulled = false;
+ambient.renderOrder = 5;
+scene.add(ambient);
+const ambTmp = new T.Color();
+export function updateAmbient(camPos, t, color) {
+    ambMat.uniforms.uTime.value = t;
+    ambMat.uniforms.uCam.value.copy(camPos);
+    ambMat.uniforms.uColor.value.lerp(ambTmp.set(color), 0.03);
+}
+
 applyQuality();

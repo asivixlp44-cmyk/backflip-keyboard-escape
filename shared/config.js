@@ -98,21 +98,21 @@ export const THEMES = {
 // corridor length and how far the floor rises before the wall
 const S_ = (name, sub, type, theme, jumps, wins, len, rise) => ({ name, sub, type, theme: THEMES[theme], themeKey: theme, jumps, wins, len, rise });
 export const STAGES = [
-    S_('Stage 1', 'SPAM JUMP TO BACKFLIP!', 'tiers', 'candy', 3, 1, 170, 12),
-    S_('Stage 2', 'SPACEBAR BRIDGES', 'bridges', 'bubble', 6, 2, 190, 12),
-    S_('Stage 3', 'TYPING KEYS!', 'pistons', 'mint', 10, 4, 200, 10),
-    S_('Stage 4', 'CHOCOLATE RIVER', 'river', 'choco', 14, 8, 210, 8),
-    S_('Stage 5', 'CAPS LOCK LASERS!', 'lasers', 'laser', 18, 15, 210, 10),
-    S_('Stage 6', 'ARROW KEY CONVEYORS', 'conveyors', 'arrow', 23, 30, 220, 12),
-    S_('Stage 7', 'GUMBALL ALLEY!', 'gumballs', 'gumball', 28, 60, 230, 30),
-    S_('Stage 8', 'SLIPPERY FROSTING', 'ice', 'frost', 33, 120, 220, 12),
-    S_('Stage 9', 'LOLLIPOP SPINNERS!', 'spinners', 'peppermint', 39, 250, 230, 10),
-    S_('Stage 10', 'GLITCH KEYS', 'glitch', 'glitch', 45, 500, 230, 12),
-    S_('Stage 11', 'MOUSE CLICK CRUSHERS!', 'crushers', 'mouse', 52, 1000, 240, 10),
-    S_('Stage 12', 'RGB GAMING RIG', 'rgb', 'rgb', 59, 2000, 250, 14),
-    S_('Stage 13', 'JELLY BOUNCE!', 'jelly', 'jelly', 66, 4000, 250, 16),
-    S_('Stage 14', 'SUGAR STORM', 'storm', 'storm', 73, 8000, 260, 12),
-    S_('Stage 15', 'RAINBOW FINALE!', 'finale', 'rainbow', 80, 16000, 270, 14),
+    S_('Stage 1', 'SPAM JUMP TO BACKFLIP!', 'tiers', 'candy', 3, 1, 230, 16),
+    S_('Stage 2', 'SPACEBAR BRIDGES', 'bridges', 'bubble', 6, 2, 280, 14),
+    S_('Stage 3', 'TYPING KEYS!', 'pistons', 'mint', 10, 4, 300, 14),
+    S_('Stage 4', 'CHOCOLATE RIVER', 'river', 'choco', 14, 8, 310, 12),
+    S_('Stage 5', 'CAPS LOCK LASERS!', 'lasers', 'laser', 18, 15, 320, 15),
+    S_('Stage 6', 'ARROW KEY CONVEYORS', 'conveyors', 'arrow', 23, 30, 330, 15),
+    S_('Stage 7', 'GUMBALL ALLEY!', 'gumballs', 'gumball', 28, 60, 360, 30),
+    S_('Stage 8', 'SLIPPERY FROSTING', 'ice', 'frost', 33, 120, 340, 15),
+    S_('Stage 9', 'LOLLIPOP SPINNERS!', 'spinners', 'peppermint', 39, 250, 360, 15),
+    S_('Stage 10', 'GLITCH KEYS', 'glitch', 'glitch', 45, 500, 360, 15),
+    S_('Stage 11', 'MOUSE CLICK CRUSHERS!', 'crushers', 'mouse', 52, 1000, 370, 15),
+    S_('Stage 12', 'RGB GAMING RIG', 'rgb', 'rgb', 59, 2000, 380, 18),
+    S_('Stage 13', 'JELLY BOUNCE!', 'jelly', 'jelly', 66, 4000, 390, 21),
+    S_('Stage 14', 'SUGAR STORM', 'storm', 'storm', 73, 8000, 400, 18),
+    S_('Stage 15', 'RAINBOW FINALE!', 'finale', 'rainbow', 80, 16000, 450, 20),
 ];
 {
     let z = LOBBY.z1, y = 0;
