@@ -6,7 +6,7 @@
 // 36 bars: music-box intro, verse, build, drop, break, build, drop 2, looping.
 
 let ctx = null, master, musicBus, musicOut, duckFilter, sfxBus, reverb, delay, pump;
-let noiseBuf = null;
+let noiseBuf = null, meter = null;
 let musicOn = false, schedTimer = null, step = 0, nextTime = 0, ducked = false, intensity = 0;
 const settings = { music: 0.6, sfx: 0.8, master: 1, muted: false };
 try { Object.assign(settings, JSON.parse(localStorage.getItem('bke_audio2') || '{}')); } catch (e) { /* defaults */ }
@@ -54,8 +54,9 @@ export function initAudio() {
     ctx = new AC();
     const comp = ctx.createDynamicsCompressor();
     comp.threshold.value = -12; comp.ratio.value = 4; comp.attack.value = 0.003; comp.release.value = 0.15;
-    master = ctx.createGain(); master.gain.value = 0.9;
+    master = ctx.createGain(); master.gain.value = 1.0;
     comp.connect(master).connect(ctx.destination);
+    meter = ctx.createAnalyser(); meter.fftSize = 2048; master.connect(meter);
     musicBus = ctx.createGain();
     duckFilter = ctx.createBiquadFilter(); duckFilter.type = 'lowpass'; duckFilter.frequency.value = 20000; duckFilter.Q.value = 0.5;
     musicOut = ctx.createGain();
@@ -95,7 +96,7 @@ function applyVolumes() {
     if (!ctx) return;
     const t = ctx.currentTime;
     const m = settings.master ?? 1;
-    musicOut.gain.setTargetAtTime(settings.muted ? 0 : settings.music * 0.5 * m * (ducked ? 0.6 : 1), t, 0.08);
+    musicOut.gain.setTargetAtTime(settings.muted ? 0 : settings.music * 1.7 * m * (ducked ? 0.6 : 1), t, 0.08);
     sfxBus.gain.setTargetAtTime(settings.sfx * m, t, 0.05);
 }
 function save() { try { localStorage.setItem('bke_audio2', JSON.stringify(settings)); } catch (e) { /* ignore */ } }
@@ -108,6 +109,10 @@ export function setVolume(kind, v) {
 // The "Sounds" button: music on / off
 export function toggleMusic() { settings.muted = !settings.muted; save(); applyVolumes(); return !settings.muted; }
 export const musicMuted = () => !!settings.muted;
+// Browsers keep audio off until a click or key press: every gesture retries until it's running
+export function resumeAudio() { initAudio(); if (ctx && ctx.state !== 'running') ctx.resume().catch(() => {}); if (ctx && !musicOn && wantMusic) startMusic(); }
+const level = () => { if (!meter) return 0; const a = new Float32Array(meter.fftSize); meter.getFloatTimeDomainData(a); let p = 0; for (const v of a) p = Math.max(p, Math.abs(v)); return +p.toFixed(3); };
+export const audioDebug = () => ({ peak: level(), state: ctx && ctx.state, musicOn, settings: { ...settings }, music: musicOut && musicOut.gain.value, sfx: sfxBus && sfxBus.gain.value });
 // Browsers keep audio off until the first click or key press
 export const audioSuspended = () => !ctx || ctx.state !== 'running';
 // Menus open: the music goes muffled and a little quieter
@@ -151,13 +156,18 @@ function clack(t, gain, out) {
     noise(t, 0.018, 'bandpass', 5200 + Math.random() * 900, 2.5, gain, out || musicBus);
     noise(t + 0.004, 0.035, 'bandpass', 1700 + Math.random() * 300, 3, gain * 0.55, out || musicBus);
 }
-// A big keycap bottoming out under your feet: a short hollow plastic knock
-function bottomOut(t, gain) {
-    const o = ctx.createOscillator(), g = ctx.createGain();
-    o.type = 'triangle'; o.frequency.setValueAtTime(420 + Math.random() * 60, t); o.frequency.exponentialRampToValueAtTime(190, t + 0.045);
-    g.gain.setValueAtTime(gain, t); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.06);
-    o.connect(g).connect(sfxBus); o.start(t); o.stop(t + 0.08);
-    noise(t, 0.03, 'bandpass', 1100, 2.2, gain * 0.6, sfxBus);
+// A big mechanical keycap under your feet: the switch's sharp click, the hollow plastic "thock" as it
+// bottoms out, and a softer clack when it springs back up. Each press is pitched a little
+// differently so a run across the keyboard sounds like typing.
+function keySwitch(t, gain) {
+    const p = 0.85 + Math.random() * 0.3;
+    noise(t, 0.012, 'bandpass', 6200 * p, 1.6, 0.34 * gain, sfxBus);              // click
+    noise(t + 0.006, 0.05, 'bandpass', 1500 * p, 2.4, 0.3 * gain, sfxBus);         // plastic body
+    const o = ctx.createOscillator(), g = ctx.createGain();                        // bottom-out thock
+    o.type = 'triangle'; o.frequency.setValueAtTime(380 * p, t + 0.008); o.frequency.exponentialRampToValueAtTime(150 * p, t + 0.07);
+    g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.32 * gain, t + 0.012); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.09);
+    o.connect(g).connect(sfxBus); o.start(t); o.stop(t + 0.11);
+    noise(t + 0.13, 0.02, 'bandpass', 3800 * p, 1.8, 0.12 * gain, sfxBus);        // spring back
 }
 // Space bar "thock": lower, rounder, with the clap on top
 function thock(t, gain) {
@@ -335,7 +345,9 @@ function scheduler() {
         step++;
     }
 }
+let wantMusic = false;
 export function startMusic() {
+    wantMusic = true;
     if (!ctx || musicOn) return;
     musicOn = true;
     step = 0; nextTime = ctx.currentTime + 0.1;
@@ -356,7 +368,9 @@ const FLIP_SCALE = [0, 2, 4, 5, 7, 9, 11, 12, 14, 16, 17, 19, 21, 23, 24];
 let flipN = 0;
 export function resetFlips() { flipN = 0; }
 const SFX = {
-    click(t) { clack(t, 0.32, sfxBus); },
+    // UI: a crisp keycap tap with a bright little pop on top
+    click(t) { clack(t, 0.28, sfxBus); tone(t, 'sine', 1150, 1700, 0.05, 0.11); },
+    clickBuy(t) { clack(t, 0.28, sfxBus); tone(t, 'sine', 900, 1500, 0.05, 0.12); tone(t + 0.05, 'sine', 1500, 2100, 0.06, 0.09); },
     jump(t) { tone(t, 'sine', 300, 700, 0.12, 0.22); clack(t, 0.15, sfxBus); },
     flip(t) {
         const n = 72 + FLIP_SCALE[flipN % FLIP_SCALE.length] + 12 * Math.floor(flipN / FLIP_SCALE.length) % 24;
@@ -370,7 +384,7 @@ const SFX = {
         src.connect(f).connect(g).connect(sfxBus); src.start(t, Math.random()); src.stop(t + 0.3);
     },
     land(t) { thockSfx(t, 0.3); },
-    step(t) { clack(t, 0.065, sfxBus); bottomOut(t + 0.012, 0.07); },
+    step(t) { keySwitch(t, 1); },
     gain(t) { tone(t, 'triangle', midi(88), null, 0.05, 0.05); },
     checkpoint(t) { [79, 84, 88].forEach((n, i) => tone(t + i * 0.06, 'triangle', midi(n), null, 0.25, 0.12)); },
     zap(t) { tone(t, 'square', 1400, 180, 0.22, 0.16); noise(t, 0.15, 'highpass', 3000, 0.8, 0.18, sfxBus); },

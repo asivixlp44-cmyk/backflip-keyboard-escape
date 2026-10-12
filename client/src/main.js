@@ -4,7 +4,7 @@ import {
     billboard, buildRig, animRig, airPose, burst, confettiAt, floatText, updateEffects, lerpAngle, updateSky, FOG,
 } from './engine.js';
 import { S, actions, net } from './state.js';
-import { initAudio, startMusic, sfx, setVolume, resetFlips, setMusicIntensity, audioSuspended } from './audio.js';
+import { initAudio, resumeAudio, audioDebug, startMusic, sfx, setVolume, resetFlips, setMusicIntensity, audioSuspended } from './audio.js';
 import * as BX from './bloxity.js';
 import { createAvatar, loadBase, packAvatar, unpackAvatar, avatarStats } from './avatar.js';
 import { updateMaterials } from './textures.js';
@@ -1049,14 +1049,19 @@ function showTips() {
     setTimeout(() => { el.hidden = true; }, 9900);
 }
 function unlockAudioOnGesture() {
-    const unlock = () => { initAudio(); removeEventListener('pointerdown', unlock); removeEventListener('keydown', unlock); removeEventListener('touchstart', unlock); };
-    addEventListener('pointerdown', unlock); addEventListener('keydown', unlock); addEventListener('touchstart', unlock);
+    // Stays armed until the browser actually lets the audio run (the first gesture can be too early)
+    const unlock = () => {
+        resumeAudio();
+        if (!audioSuspended()) for (const ev of ['pointerdown', 'pointerup', 'keydown', 'touchstart', 'touchend', 'click']) removeEventListener(ev, unlock, true);
+    };
+    for (const ev of ['pointerdown', 'pointerup', 'keydown', 'touchstart', 'touchend', 'click']) addEventListener(ev, unlock, true);
 }
 function wirePortalSettings() {
     const embedded = (fn) => (v) => { if (BX.isEmbedded()) fn(v); };
-    const pct = (v) => clamp((parseInt(v, 10) || 0) / 100, 0, 1);
-    BX.listenSetting('master_volume', embedded((v) => setVolume('master', pct(v))));
-    BX.listenSetting('music_volume', embedded((v) => setVolume('music', pct(v))));
+    // Portal volumes come as 0-100 (sometimes "50%" or 0-1); anything unreadable leaves the volume alone
+    const pct = (v) => { const n = parseFloat(String(v)); if (!isFinite(n)) return undefined; return clamp(n > 1 ? n / 100 : n, 0, 1); };
+    BX.listenSetting('master_volume', embedded((v) => { const p = pct(v); if (p !== undefined) setVolume('master', p); }));
+    BX.listenSetting('music_volume', embedded((v) => { const p = pct(v); if (p !== undefined) setVolume('music', p); }));
     BX.listenSetting('graphics_quality', embedded((v) => setQuality(v === 'Low' ? 'low' : v === 'Medium' ? 'medium' : 'high')));
     BX.listenSetting('camera_sensitivity', embedded((v) => { camSens = clamp(parseFloat(v) || 1, 0.1, 5); }));
     BX.listenSetting('show_fps', (v) => { showFps = v === 'true'; $('#fps').hidden = !showFps; });
@@ -1111,7 +1116,7 @@ boot();
 // Dev-only hooks for automated QA runs (stripped from production builds)
 if (import.meta.env.DEV) {
     window.__qa = {
-        input: (o) => Object.assign(botInput, o), jump: () => pressJump(), solids, cam, P, S, STAGES, avatarStats, scene, camera, net, renderer: () => renderer,
+        audio: () => audioDebug(), input: (o) => Object.assign(botInput, o), jump: () => pressJump(), solids, cam, P, S, STAGES, avatarStats, scene, camera, net, renderer: () => renderer,
         teleport: (x, y, z, yaw) => { P.padLock = false; teleport(new V3(x, y, z), yaw || 0); },
         walk: (n) => { qaWalk = n; }, jumps: (n) => { qaJumps = n; }, deaths: () => deaths, near: () => near.length,
         // Runs the game at 60 steps a second without rendering: hold forward f, press jump every N steps

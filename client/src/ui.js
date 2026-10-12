@@ -242,7 +242,11 @@ $('#btnDaily').addEventListener('click', () => openDaily());
 $('#btnFriends').addEventListener('click', () => openModal('friends'));
 $('#btnSettings').addEventListener('click', () => openModal('settings'));
 // Every chunky button clicks like a key
-document.addEventListener('pointerdown', (e) => { if (e.target.closest && e.target.closest('.btn, .rbx, .ib, #starter')) sfx('click'); });
+// Every button, tile, tab and shop card clicks (pointerdown, so it feels instant)
+document.addEventListener('pointerdown', (e) => {
+    const b = e.target.closest && e.target.closest('button, .btn, .rbx, .ib, #starter, [role="button"], .tab, .card, .slot, .item, input[type="range"]');
+    if (b && !b.disabled) sfx(b.matches('.g-green, .buy, .claim') ? 'clickBuy' : 'click');
+}, true);
 
 // ----- panels -----
 let modalKind = null, modalTab = null;
