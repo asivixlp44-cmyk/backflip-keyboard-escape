@@ -1,18 +1,18 @@
 // Keyboard keycaps, the look of the whole game: glossy plastic keycaps with rounded tops and a
 // letter printed on each, drawn as instanced meshes (thousands of keys, a few draw calls).
-// A keycap's top face is at y = 0 in its own space and 3 studs across at scale 1, so one key per
-// KEY.pitch (4) studs, like the big keys in the reference.
+// A keycap's top face is at y = 0 in its own space. Floor keys are the tall sculpted kind from the
+// reference: steep tapered sides, a deep gap to the next key, one key per KEY.pitch (4) studs.
+// Space bars, wall keys and moving hazard keys keep the low flat cap so they match their colliders.
 import { T, scene } from './engine.js';
 
-export const KEY = { pitch: 4, h: 1.0 };
+export const KEY = { pitch: 4, h: 1.0, tallH: 1.6, press: 1.05 };
 export const LETTERS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789←↑→↓★♥+?!#@&$%✓☺';
 export const letterIndex = (ch) => LETTERS.indexOf(ch);
 const ALPHA = 'QWERTYUIOPASDFGHJKLZXCVBNM';
 
 // ----- geometry: an octagon-cornered frustum with a rounded shoulder and a flat top -----
-function keycapGeometry() {
+function keycapGeometry(rings) {
     // rings: [y, half size, corner chamfer]
-    const rings = [[-KEY.h, 1.86, 0.52], [-0.3, 1.7, 0.46], [-0.1, 1.6, 0.42], [-0.02, 1.53, 0.38], [0, 1.48, 0.36]];
     const outline = (a, c) => [[a - c, a], [a, a - c], [a, -(a - c)], [a - c, -a], [-(a - c), -a], [-a, -(a - c)], [-a, a - c], [-(a - c), a]];
     const pos = [], idx = [];
     for (const [y, a, c] of rings) for (const [x, z] of outline(a, c)) pos.push(x, y, z);
@@ -39,7 +39,10 @@ function keycapGeometry() {
     g.computeBoundingSphere();
     return g;
 }
-export const KEYCAP = keycapGeometry();
+export const KEYCAP = keycapGeometry([[-KEY.h, 1.86, 0.52], [-0.3, 1.7, 0.46], [-0.1, 1.6, 0.42], [-0.02, 1.53, 0.38], [0, 1.48, 0.36]]);
+// Tall floor key: wide skirt hidden in the case, steep sides, soft rounded shoulder, flat top
+export const KEYCAP_TALL = keycapGeometry([[-2.1, 1.74, 0.5], [-KEY.tallH, 1.72, 0.5], [-1.0, 1.6, 0.46], [-0.42, 1.46, 0.42], [-0.16, 1.37, 0.39], [-0.04, 1.31, 0.37], [0, 1.28, 0.35]]);
+const PRESS_PINK = new T.Color(0xff3fc4);
 
 // ----- letter atlas: 8 x 8 white glyphs -----
 const ATLAS = (() => {
@@ -103,7 +106,7 @@ export function keyMaterial(ink, glow, rgb) {
                 vec3 kLit = mix(uInk, kRgb, uRgb);
                 totalEmissiveRadiance += kLit * kGlyph * uGlow * 2.2;
                 // RGB backlight bleeding out under the keycap edges
-                totalEmissiveRadiance += kRgb * uRgb * smoothstep(-0.45, -0.95, vKeyY) * 1.4;`);
+                totalEmissiveRadiance += kRgb * uRgb * smoothstep(-0.55, -1.35, vKeyY) * 1.4;`);
     };
     m.customProgramCacheKey = () => 'keycap';
     keyMats.set(k, m);
@@ -115,9 +118,10 @@ const batches = new Map();
 // Adds one keycap: top centre at (x, top, z); size scales its width / depth (1 = a normal key);
 // letter: index into LETTERS, -1 for none (space bars). wall: the key stands on a wall facing -z.
 export function addKey(zone, look, x, top, z, color, letter, sx, sz, sy, wall) {
-    const k = zone + '|' + look.ink + '|' + (look.glow ? 1 : 0) + '|' + (look.rgb ? 1 : 0) + '|' + (wall ? 'w' : 'f');
+    const tall = !wall && (sx || 1) === 1 && (sz || 1) === 1 && (sy || 1) === 1;
+    const k = zone + '|' + look.ink + '|' + (look.glow ? 1 : 0) + '|' + (look.rgb ? 1 : 0) + '|' + (wall ? 'w' : tall ? 't' : 'f');
     let b = batches.get(k);
-    if (!b) { b = { zone, look, wall: !!wall, list: [] }; batches.set(k, b); }
+    if (!b) { b = { zone, look, wall: !!wall, tall, list: [] }; batches.set(k, b); }
     b.list.push(x, top, z, sx || 1, sy || 1, sz || 1, color, letter ?? -1);
 }
 // A key set into a wall facing -z (the giant keyboard on the end walls): face at zFace
@@ -151,24 +155,38 @@ export function keyAt(x, y, z) {
     }
     return best;
 }
-// Press a key (returns true when it wasn't already down)
+// Press a key (returns true when it wasn't already down). A held key sinks most of the way into the
+// case and turns hot pink; let go and it springs back up with a little bounce.
 export function pressKey(k) {
     if (!k) return false;
-    const fresh = !pressed.has(k) || k.t < 0;
-    k.t = 0.16;
+    const fresh = !pressed.has(k) || k.t <= 0;
+    k.t = 0.12;
     pressed.add(k);
     return fresh;
 }
+// How far a key is pushed down right now (what the player standing on it sinks by)
+export const keyDepth = (k) => (k && k.depth > 0 ? k.depth : 0);
 export function updatePressed(dt) {
     for (const k of pressed) {
         k.t -= dt;
-        // Down while held, then a quick spring back with a little overshoot
-        let depth = k.t > 0 ? 0.34 : 0.34 * Math.cos(Math.min(Math.PI, -k.t * 22)) * Math.exp(k.t * 18);
-        if (k.t < -0.2) { depth = 0; pressed.delete(k); }
-        m4.compose(v0.set(k.x, k.top - Math.max(-0.08, depth), k.z), q0, s0.set(k.sx, k.sy, k.sz));
+        const target = k.t > 0 ? k.dmax : 0;
+        // Stiff spring: snaps down in ~0.06 s, back up in ~0.12 s with a small overshoot
+        const sdt = Math.min(dt, 1 / 30);
+        k.v += (target - k.depth) * 1400 * sdt;
+        k.v *= Math.exp(-(k.t > 0 ? 55 : 30) * sdt);
+        k.depth = Math.min(k.dmax, k.depth + k.v * sdt);
+        if (k.depth >= k.dmax) k.v = Math.min(0, k.v);
+        if (k.t < -0.6 && Math.abs(k.depth) < 0.004 && Math.abs(k.v) < 0.05) { k.depth = 0; k.v = 0; pressed.delete(k); }
+        m4.compose(v0.set(k.x, k.top - k.depth, k.z), q0, s0.set(k.sx, k.sy, k.sz));
         k.mesh.setMatrixAt(k.i, m4);
         k.mesh.instanceMatrix.addUpdateRange(k.i * 16, 16);
         k.mesh.instanceMatrix.needsUpdate = true;
+        if (k.mesh.instanceColor) {
+            c0.copy(k.c).lerp(PRESS_PINK, Math.min(1, Math.max(0, k.depth / k.dmax)) * 0.9);
+            k.mesh.setColorAt(k.i, c0);
+            k.mesh.instanceColor.addUpdateRange(k.i * 3, 3);
+            k.mesh.instanceColor.needsUpdate = true;
+        }
     }
 }
 // Fills a w x d area (centre x, z) with keys whose tops are at `top`. pick(i, j, rng) -> colour
@@ -191,7 +209,8 @@ export function flushKeys(parentFor) {
     for (const b of batches.values()) {
         const n = b.list.length / 8;
         if (!n) continue;
-        const mesh = new T.InstancedMesh(KEYCAP, keyMaterial(b.look.ink, b.look.glow, b.look.rgb), n);
+        const geo = b.tall ? KEYCAP_TALL : KEYCAP;
+        const mesh = new T.InstancedMesh(geo, keyMaterial(b.look.ink, b.look.glow, b.look.rgb), n);
         const letters = new Float32Array(n);
         for (let i = 0; i < n; i++) {
             const o = i * 8, L = b.list;
@@ -199,9 +218,9 @@ export function flushKeys(parentFor) {
             mesh.setMatrixAt(i, m4);
             mesh.setColorAt(i, c0.set(L[o + 6]));
             letters[i] = L[o + 7];
-            if (!b.wall) registerKey({ mesh, i, x: L[o], top: L[o + 1], z: L[o + 2], sx: L[o + 3], sy: L[o + 4], sz: L[o + 5], t: -1 });
+            if (!b.wall) registerKey({ mesh, i, x: L[o], top: L[o + 1], z: L[o + 2], sx: L[o + 3], sy: L[o + 4], sz: L[o + 5], t: -1, depth: 0, v: 0, dmax: b.tall ? KEY.press : 0.34 * L[o + 4], c: new T.Color(L[o + 6]) });
         }
-        mesh.geometry = KEYCAP.clone();
+        mesh.geometry = geo.clone();
         mesh.geometry.setAttribute('aLetter', new T.InstancedBufferAttribute(letters, 1));
         mesh.receiveShadow = true;
         mesh.castShadow = false;

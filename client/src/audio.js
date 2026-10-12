@@ -151,6 +151,14 @@ function clack(t, gain, out) {
     noise(t, 0.018, 'bandpass', 5200 + Math.random() * 900, 2.5, gain, out || musicBus);
     noise(t + 0.004, 0.035, 'bandpass', 1700 + Math.random() * 300, 3, gain * 0.55, out || musicBus);
 }
+// A big keycap bottoming out under your feet: a short hollow plastic knock
+function bottomOut(t, gain) {
+    const o = ctx.createOscillator(), g = ctx.createGain();
+    o.type = 'triangle'; o.frequency.setValueAtTime(420 + Math.random() * 60, t); o.frequency.exponentialRampToValueAtTime(190, t + 0.045);
+    g.gain.setValueAtTime(gain, t); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.06);
+    o.connect(g).connect(sfxBus); o.start(t); o.stop(t + 0.08);
+    noise(t, 0.03, 'bandpass', 1100, 2.2, gain * 0.6, sfxBus);
+}
 // Space bar "thock": lower, rounder, with the clap on top
 function thock(t, gain) {
     noise(t, 0.07, 'bandpass', 900, 2, gain, musicBus);
@@ -362,7 +370,7 @@ const SFX = {
         src.connect(f).connect(g).connect(sfxBus); src.start(t, Math.random()); src.stop(t + 0.3);
     },
     land(t) { thockSfx(t, 0.3); },
-    step(t) { clack(t, 0.05, sfxBus); },
+    step(t) { clack(t, 0.065, sfxBus); bottomOut(t + 0.012, 0.07); },
     gain(t) { tone(t, 'triangle', midi(88), null, 0.05, 0.05); },
     checkpoint(t) { [79, 84, 88].forEach((n, i) => tone(t + i * 0.06, 'triangle', midi(n), null, 0.25, 0.12)); },
     zap(t) { tone(t, 'square', 1400, 180, 0.22, 0.16); noise(t, 0.15, 'highpass', 3000, 0.8, 0.18, sfxBus); },

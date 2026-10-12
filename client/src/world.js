@@ -123,16 +123,18 @@ function kbSlab(zone, look, x, z, w, d, top, rng, o) {
     o = o || {};
     const thick = o.thick ?? 3;
     const caseM = candy(o.caseColor ?? look.case ?? 0xff9ad6, { rough: 0.32 });
-    roundBox(zone, w + 1.8, thick, d + 1.8, x, top - 0.6 - thick / 2, z, caseM, 0.55, { cast: o.cast });
-    // Rim around the keys, just below their tops
+    // Case floor sits a full key height down, so the tall keys stand up out of it with deep gaps
+    const KH = KEY.tallH;
+    roundBox(zone, w + 1.8, thick, d + 1.8, x, top - KH - thick / 2, z, caseM, 0.55, { cast: o.cast });
+    // Raised rim around the keys, up to about their shoulders
     const rimM = candy(lighten(o.caseColor ?? look.case ?? 0xff9ad6, 0.25), { rough: 0.3 });
     for (const s of [-1, 1]) {
-        roundBox(zone, w + 1.8, 0.7, 0.9, x, top - 0.6, z + s * (d / 2 + 0.45), rimM, 0.3);
-        roundBox(zone, 0.9, 0.7, d + 1.8, x + s * (w / 2 + 0.45), top - 0.6, z, rimM, 0.3);
+        roundBox(zone, w + 1.8, KH, 0.9, x, top - KH / 2 - 0.35, z + s * (d / 2 + 0.45), rimM, 0.3);
+        roundBox(zone, 0.9, KH, d + 1.8, x + s * (w / 2 + 0.45), top - KH / 2 - 0.35, z, rimM, 0.3);
     }
     if (!o.noKeys) keyGrid(zone, look, x, z, w, d, top, rng, o.pick, { blank: o.blank, skip: o.skip });
     if (o.solid === false) return null;
-    return solid(zone, x, top - (thick + 0.6) / 2, z, w + 1.8, thick + 0.6, d + 1.8, o.extra);
+    return solid(zone, x, top - (thick + KEY.tallH) / 2, z, w + 1.8, thick + KEY.tallH, d + 1.8, o.extra);
 }
 // A single big key to stand on, on a candy stem down into the void. size: key units (1 = 3.7 studs)
 function keyStone(zone, look, x, z, size, top, rng, o) {
@@ -280,8 +282,8 @@ function buildLobby() {
         addKey(Z, look, x, 0, z, look.keys[Math.floor(rng() * look.keys.length)], randomLetter(rng));
     }
     // Base under the keys (seen in the gaps), and the floor collision
-    plainBox(Z, LX * 2, 1.2, LZ1 + 30, 0, -1.0, (LZ1 - 30) / 2, candy(0x5a2a8a, { rough: 0.7 }));
-    plainBox(Z, LX * 2, 1.2, -30 - LZ0, 0, -1.0, (-30 + LZ0) / 2, candy(0x3a1a0c, { rough: 0.7 }));
+    plainBox(Z, LX * 2, 1.2, LZ1 + 30, 0, -KEY.tallH - 0.6, (LZ1 - 30) / 2, candy(0x5a2a8a, { rough: 0.7 }));
+    plainBox(Z, LX * 2, 1.2, -30 - LZ0, 0, -KEY.tallH - 0.6, (-30 + LZ0) / 2, candy(0x3a1a0c, { rough: 0.7 }));
     solid(Z, 0, -2, (LZ0 + LZ1) / 2, LX * 2, 4, LZ1 - LZ0);
 
     // Walls: purple studs with pink trims, an opening for the Stage 1 corridor
@@ -1279,7 +1281,7 @@ const beamTex = (() => {
 function endWall(s, rng) {
     const Z = s.i, th = s.theme, last = s.i === STAGES.length - 1;
     const depth = last ? SUMMIT.len : 20, bottom = s.y1 - 40;
-    studBox(Z, STAGE_W, s.top - 0.6 - bottom, depth, 0, (s.top - 0.6 + bottom) / 2, s.zE + depth / 2, shade(th.wall, 0.92), { solid: false });
+    studBox(Z, STAGE_W, s.top - KEY.tallH - bottom, depth, 0, (s.top - KEY.tallH + bottom) / 2, s.zE + depth / 2, shade(th.wall, 0.92), { solid: false });
     solid(Z, 0, (s.top + bottom) / 2, s.zE + depth / 2, STAGE_W, s.top - bottom, depth);
     roundBox(Z, STAGE_W + 1, 1.2, 1.4, 0, s.top - 0.2, s.zE - 0.2, candy(th.trim, { rough: 0.3 }), 0.5);
     // The giant keyboard on the wall face

@@ -14,7 +14,7 @@ import {
     buildWorld, SPAWN, refreshShop, renderBoards, updateLobbySigns, updateWorld, cullZones, checkpoints, windAt, treadOwned, stageStart,
 } from './world.js';
 import { buildItem } from './candy.js';
-import { redrawAtlas, keyAt, pressKey, updatePressed } from './keys.js';
+import { redrawAtlas, keyAt, pressKey, keyDepth, updatePressed } from './keys.js';
 import {
     updateHud, toast, levelUp, showStageTitle, showGoal, showOof, animateCounters, showOffline, openDailyOnJoin, refreshModal,
     closeModal, openModal, promptEl, promptTxtEl, jumpCounter, buyShoe, buyTread, codeResult, showTradeAsk, showTrade, tradeDone,
@@ -377,7 +377,9 @@ class Remote {
         this.phase += dt * (moving ? Math.min(18, 4 + this.vel * 0.2) : 0);
         if (air) airPose(u.body, spinning ? 1 : 0); else if (moving) animRig(u.body, this.phase, 0.85); else animRig(u.body, 0, 0);
         if (this.blox) this.blox.update(dt, { moving, air, speed: this.vel, t });
-        if (!air && r.visible) pressKey(keyAt(r.position.x, r.position.y, r.position.z));
+        const under = !air && r.visible ? keyAt(r.position.x, r.position.y, r.position.z) : null;
+        pressKey(under);
+        u.pivot.position.y = PIVOT - keyDepth(under);
         setItem(r, p.item); setShoe(r, p.shoe); setTrail(r, p.trail);
         if (u.item) u.item.update(t, air);
         u.trail.update(trailAt(r), (moving || air) && r.visible, dt, t);
@@ -935,8 +937,10 @@ function update(dt) {
         if (sd && sd.fx && P.moving && P.onGround && footT <= 0 && !P.dead) { footT = 0.06; shoeFx(P.pos, sd.fx, sd.glow); }
         const stepN = Math.floor(P.animPhase / Math.PI);
         if (P.onGround && P.moving && !P.dead && stepN !== P.lastStep && hs > 40 && stepN % 2 === 0) dust(P.pos, 1, 0.5);
-        // The key under your feet presses down and clicks
-        if (P.onGround && !P.dead && pressKey(keyAt(P.pos.x, P.pos.y, P.pos.z)) && t - P.lastClick > 0.07) { P.lastClick = t; sfx('step'); }
+        // The key under your feet presses down (you sink with it) and clicks
+        const under = P.onGround && !P.dead ? keyAt(P.pos.x, P.pos.y, P.pos.z) : null;
+        if (pressKey(under) && t - P.lastClick > 0.07) { P.lastClick = t; sfx('step'); }
+        u.pivot.position.y = PIVOT - keyDepth(under);
         P.lastStep = stepN;
         P.squashV += (1 - P.squash) * 180 * dt;
         P.squashV *= Math.exp(-12 * dt);
