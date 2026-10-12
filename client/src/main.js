@@ -14,7 +14,7 @@ import {
     buildWorld, SPAWN, refreshShop, renderBoards, updateLobbySigns, updateWorld, cullZones, checkpoints, windAt, treadOwned, stageStart,
 } from './world.js';
 import { buildItem } from './candy.js';
-import { redrawAtlas, keyAt, pressKey, updatePressed } from './keys.js';
+import { redrawAtlas, keyAt, pressKey, pressAround, updatePressed, KEY } from './keys.js';
 import {
     updateHud, toast, levelUp, showStageTitle, showGoal, showOof, animateCounters, showOffline, openDailyOnJoin, refreshModal,
     closeModal, openModal, promptEl, promptTxtEl, jumpCounter, buyShoe, buyTread, codeResult, showTradeAsk, showTrade, tradeDone,
@@ -41,6 +41,13 @@ let shake = 0;
 function addShake(a) { if (!reduceMotion) shake = Math.min(1.2, shake + a); }
 let rig = null, headLabel, nameLabelText = '';
 
+// How far a character is drawn below its feet: the pressed-key depth while walking on the keyboard
+// (eased in, so stepping on and off it is smooth), easing back out in the air or on solid ground
+function keySink(cur, ground, onKeys, dt) {
+    const target = ground && onKeys ? KEY.press : 0;
+    const rate = !ground ? 5 : target > cur ? 30 : 14;
+    return cur + (target - cur) * Math.min(1, dt * rate);
+}
 // ----- a character: rig (feet, yaw) -> pivot (hips, backflip spin) -> body (blocky or Bloxity) -----
 function buildCharacter(kit, skin) {
     const g = new T.Group();
@@ -377,6 +384,9 @@ class Remote {
         this.phase += dt * (moving ? Math.min(18, 4 + this.vel * 0.2) : 0);
         if (air) airPose(u.body, spinning ? 1 : 0); else if (moving) animRig(u.body, this.phase, 0.85); else animRig(u.body, 0, 0);
         if (this.blox) this.blox.update(dt, { moving, air, speed: this.vel, t });
+        const onKeys = !air && r.visible && pressAround(r.position.x, r.position.y, r.position.z, 0.9);
+        this.sink = keySink(this.sink || 0, !air, onKeys, dt);
+        u.pivot.position.y = PIVOT - this.sink;
         setItem(r, p.item); setShoe(r, p.shoe); setTrail(r, p.trail);
         if (u.item) u.item.update(t, air);
         u.trail.update(trailAt(r), (moving || air) && r.visible, dt, t);
@@ -934,9 +944,13 @@ function update(dt) {
         if (sd && sd.fx && P.moving && P.onGround && footT <= 0 && !P.dead) { footT = 0.06; shoeFx(P.pos, sd.fx, sd.glow); }
         const stepN = Math.floor(P.animPhase / Math.PI);
         if (P.onGround && P.moving && !P.dead && stepN !== P.lastStep && hs > 40 && stepN % 2 === 0) dust(P.pos, 1, 0.5);
-        // Each key you step onto clicks (the keys stay put, so running across them is smooth)
+        // Keys under your feet press down and you walk along at the pressed level (no bump between
+        // keys); each new key you step onto clicks
         const under = P.onGround && !P.dead ? keyAt(P.pos.x, P.pos.y, P.pos.z) : null;
         if (pressKey(under) && t - P.lastClick > 0.07) { P.lastClick = t; sfx('step'); }
+        const onKeys = P.onGround && !P.dead && pressAround(P.pos.x, P.pos.y, P.pos.z, 0.9);
+        P.sink = keySink(P.sink || 0, P.onGround, onKeys, dt);
+        u.pivot.position.y = PIVOT - P.sink;
         P.lastStep = stepN;
         P.squashV += (1 - P.squash) * 180 * dt;
         P.squashV *= Math.exp(-12 * dt);

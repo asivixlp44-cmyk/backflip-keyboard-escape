@@ -19,8 +19,9 @@ const LX = LOBBY.halfX, LZ0 = LOBBY.z0, LZ1 = LOBBY.z1;
 export const SPAWN = new V3(LOBBY.spawn.x, LOBBY.spawn.y, LOBBY.spawn.z);
 // Key looks for the lobby: the pink plaza (as in the reference), white aisle, chocolate keys
 const LOOK = {
-    plaza: { keys: [0xffc4e6, 0xd8c4ff, 0xf2a8e0, 0xe6d8ff, 0xffd6ee, 0xc8b0ff], ink: 0x3a2050 },
-    aisle: { keys: [0xffffff, 0xfff0fa, 0xf4eaff], ink: 0x3a2050 },
+    // Sampled from the reference lobby: pink, lavender, purple, light pink, pale lilac, white
+    plaza: { keys: [0xf29ae8, 0xc9a2f4, 0xb48af0, 0xf7c2f1, 0xdccbf7, 0xfaf2fc], ink: 0x161020 },
+    aisle: { keys: [0xffffff, 0xfaf4fd], ink: 0x161020 },
     choco: { keys: [0x8a4a26, 0x6a3418, 0x9a5a32, 0x7a4022, 0xa86a3e], ink: 0xffe8cc },
 };
 
@@ -282,7 +283,7 @@ function buildLobby() {
         addTallKey(Z, look, x, 0, z, look.keys[Math.floor(rng() * look.keys.length)], randomLetter(rng));
     }
     // Base under the keys (seen in the gaps), and the floor collision
-    plainBox(Z, LX * 2, 1.2, LZ1 + 30, 0, -KEY.tallH - 0.6, (LZ1 - 30) / 2, candy(0x5a2a8a, { rough: 0.7 }));
+    plainBox(Z, LX * 2, 1.2, LZ1 + 30, 0, -KEY.tallH - 0.6, (LZ1 - 30) / 2, candy(0xd98ad8, { rough: 0.6 }));
     plainBox(Z, LX * 2, 1.2, -30 - LZ0, 0, -KEY.tallH - 0.6, (-30 + LZ0) / 2, candy(0x3a1a0c, { rough: 0.7 }));
     solid(Z, 0, -2, (LZ0 + LZ1) / 2, LX * 2, 4, LZ1 - LZ0);
 

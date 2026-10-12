@@ -1,13 +1,14 @@
 // Keyboard keycaps, the look of the whole game: glossy plastic keycaps with rounded tops and a
 // letter printed on each, drawn as instanced meshes (thousands of keys, a few draw calls).
-// A keycap's top face is at y = 0 in its own space. Floor keys are the big sculpted caps from the
-// reference: about as wide as your character, rounded corners, a soft rounded top edge, a shallow
-// dish on top and a thin gap to the next key, one per KEY.tallPitch (6) studs. They don't move:
-// you run smoothly across their tops (the real game has no bump), each one just clicks.
+// A keycap's top face is at y = 0 in its own space. Floor keys are the tall sculpted caps from the
+// reference: one per KEY.tallPitch (4) studs (about your shoulder width), 1.7 studs tall, steep
+// tapered sides, rounded corners and a shallow dish. The keys you stand on press all the way down
+// (they keep their colour) and you walk along at that pressed level, so running across the keyboard
+// is smooth: the next key is already going down as you reach it, the last one pops back up behind.
 // Space bars, wall keys and moving hazard keys keep the low flat cap so they match their colliders.
 import { T, scene } from './engine.js';
 
-export const KEY = { pitch: 4, h: 1.0, tallPitch: 6, tallScale: 1.5, tallH: 1.5 };
+export const KEY = { pitch: 4, h: 1.0, tallPitch: 4, tallScale: 1, tallH: 1.7, press: 1.05 };
 export const LETTERS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789←↑→↓★♥+?!#@&$%✓☺';
 export const letterIndex = (ch) => LETTERS.indexOf(ch);
 const ALPHA = 'QWERTYUIOPASDFGHJKLZXCVBNM';
@@ -42,7 +43,7 @@ function keycapGeometry(rings) {
     return g;
 }
 export const KEYCAP = keycapGeometry([[-KEY.h, 1.86, 0.52], [-0.3, 1.7, 0.46], [-0.1, 1.6, 0.42], [-0.02, 1.53, 0.38], [0, 1.48, 0.36]]);
-// Big sculpted floor key, built in "unit" space (instances are scaled by KEY.tallScale): a rounded
+// Tall sculpted floor key (instances may be stretched a little to fill an area): a rounded
 // rectangle swept through rings from a skirt hidden in the case up a gently curved side to a rounded
 // top edge, then a shallow spherical dish across the top.
 function tallKeyGeometry() {
@@ -57,7 +58,7 @@ function tallKeyGeometry() {
         return pts;
     };
     // [y, half size, corner radius]
-    const rings = [[-1.25, 1.84, 0.44], [-1.0, 1.83, 0.44], [-0.6, 1.66, 0.42], [-0.3, 1.52, 0.4], [-0.12, 1.44, 0.38], [-0.04, 1.395, 0.37], [-0.008, 1.37, 0.36], [0, 1.35, 0.355]];
+    const rings = [[-2.1, 1.84, 0.44], [-KEY.tallH, 1.83, 0.44], [-1.15, 1.67, 0.42], [-0.6, 1.5, 0.4], [-0.25, 1.4, 0.38], [-0.09, 1.345, 0.37], [-0.018, 1.318, 0.36], [0, 1.3, 0.355]];
     const M = 4 * (SEG + 1);
     const pos = [], idx = [];
     for (const [y, a, r] of rings) for (const [x, z] of outline(a, r)) pos.push(x, y, z);
@@ -193,22 +194,51 @@ export function keyAt(x, y, z) {
         for (const k of list) {
             if (Math.abs(k.top - y) > 0.45) continue;
             const ax = Math.abs(x - k.x), az = Math.abs(z - k.z);
-            if (ax > 1.75 * k.sx || az > 1.75 * k.sz) continue;
+            if (ax > k.hx || az > k.hz) continue;
             if (ax + az < bd) { bd = ax + az; best = k; }
         }
     }
     return best;
 }
-// A key under someone's feet: returns true when they just stepped onto it (that's when it clicks)
+// The key under someone's feet: returns true when they just stepped onto it (that's when it clicks)
 export function pressKey(k) {
     if (!k) return false;
-    const fresh = !pressed.has(k);
-    k.t = 0.12;
-    pressed.add(k);
+    const fresh = !(k.t > 0);
+    k.t = 0.1;
+    if (k.tall) pressed.add(k);
     return fresh;
 }
+// Presses every tall key under a footprint of half-width r around (x, z) at foot height y, like feet
+// touching them; returns true if any key is there (you're walking on the keyboard)
+export function pressAround(x, y, z, r) {
+    const cx = Math.floor(x / CELL), cz = Math.floor(z / CELL);
+    let any = false;
+    for (let dx = -1; dx <= 1; dx++) for (let dz = -1; dz <= 1; dz++) {
+        const list = keyCells.get((cx + dx) + '|' + (cz + dz));
+        if (!list) continue;
+        for (const k of list) {
+            if (!k.tall || Math.abs(k.top - y) > 0.45) continue;
+            if (Math.abs(x - k.x) > k.hx * 0.8 + r || Math.abs(z - k.z) > k.hz * 0.8 + r) continue;
+            k.t = Math.max(k.t, 0.1); pressed.add(k);
+            if (Math.abs(x - k.x) <= k.hx && Math.abs(z - k.z) <= k.hz) any = true;
+        }
+    }
+    return any;
+}
 export function updatePressed(dt) {
-    for (const k of pressed) { k.t -= dt; if (k.t <= 0) pressed.delete(k); }
+    const sdt = Math.min(dt, 1 / 30);
+    for (const k of pressed) {
+        k.t -= dt;
+        const down = k.t > 0;
+        // Goes down fast with no bounce; comes back up quickly with a small springy overshoot
+        if (down) { k.depth += (KEY.press - k.depth) * Math.min(1, sdt * 34); k.v = 0; }
+        else { k.v += (0 - k.depth) * 900 * sdt; k.v *= Math.exp(-26 * sdt); k.depth += k.v * sdt; }
+        if (!down && k.t < -0.8 && Math.abs(k.depth) < 0.003 && Math.abs(k.v) < 0.03) { k.depth = 0; k.v = 0; pressed.delete(k); }
+        m4.compose(v0.set(k.x, k.top - k.depth, k.z), q0, s0.set(k.sx, k.sy, k.sz));
+        k.mesh.setMatrixAt(k.i, m4);
+        k.mesh.instanceMatrix.addUpdateRange(k.i * 16, 16);
+        k.mesh.instanceMatrix.needsUpdate = true;
+    }
 }
 // Fills a w x d area (centre x, z) with big keys whose tops are at `top`, as many as fit at about
 // KEY.tallPitch, each stretched slightly so the rows fill the area edge to edge. pick(i, j, rng) -> colour
@@ -241,7 +271,9 @@ export function flushKeys(parentFor) {
             mesh.setMatrixAt(i, m4);
             mesh.setColorAt(i, c0.set(L[o + 6]));
             letters[i] = L[o + 7];
-            if (!b.wall) registerKey({ x: L[o], top: L[o + 1], z: L[o + 2], sx: b.tall ? L[o + 3] / KEY.tallScale * 1.6 : L[o + 3], sz: b.tall ? L[o + 5] / KEY.tallScale * 1.6 : L[o + 5], t: 0 });
+            if (!b.wall) registerKey({ mesh, i, tall: b.tall, x: L[o], top: L[o + 1], z: L[o + 2], sx: L[o + 3], sy: L[o + 4], sz: L[o + 5],
+                // tall keys own their whole cell (no dead zone in the gaps), flat ones their cap
+                hx: (b.tall ? KEY.tallPitch / 2 : 1.75) * L[o + 3], hz: (b.tall ? KEY.tallPitch / 2 : 1.75) * L[o + 5], t: 0, depth: 0, v: 0 });
         }
         mesh.geometry = geo.clone();
         mesh.geometry.setAttribute('aLetter', new T.InstancedBufferAttribute(letters, 1));
