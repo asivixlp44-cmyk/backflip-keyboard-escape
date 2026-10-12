@@ -11,3 +11,4 @@ Thumbs.db
 Reference/*.mp4
 reference/*.mp4
 store-art/
+Reference/**/*.mp4
