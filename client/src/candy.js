@@ -16,19 +16,19 @@ export const PASTELS = [0xff8ad0, 0x8ad8ff, 0xffe08a, 0xb8ff9a, 0xc89aff, 0xffb0
 
 // ----- part library -----
 const G = {
-    torus: new T.TorusGeometry(1, 0.42, 10, 22),
-    frost: new T.TorusGeometry(1, 0.44, 10, 22),
-    sprinkle: new T.CapsuleGeometry(0.05, 0.22, 2, 4),
-    sphere: new T.SphereGeometry(1, 16, 12),
-    sphereLo: new T.SphereGeometry(1, 10, 8),
-    cone: new T.ConeGeometry(0.88, 2.6, 16, 1, true),
-    disc: new T.CylinderGeometry(1, 1, 1, 28),
+    torus: new T.TorusGeometry(1, 0.42, 7, 15),
+    frost: new T.TorusGeometry(1, 0.44, 7, 15),
+    sprinkle: new T.CapsuleGeometry(0.05, 0.22, 1, 4),
+    sphere: new T.SphereGeometry(1, 12, 8),
+    sphereLo: new T.SphereGeometry(1, 8, 6),
+    cone: new T.ConeGeometry(0.88, 2.6, 12, 1, true),
+    disc: new T.CylinderGeometry(1, 1, 1, 20),
     stick: new T.CylinderGeometry(0.11, 0.11, 1, 8),
     wrap: new T.ConeGeometry(0.55, 0.8, 8),
-    liner: new T.CylinderGeometry(0.95, 0.72, 1.2, 16),
-    swirl: new T.ConeGeometry(0.95, 1.5, 16),
+    liner: new T.CylinderGeometry(0.95, 0.72, 1.2, 12),
+    swirl: new T.ConeGeometry(0.95, 1.5, 12),
     box: new T.BoxGeometry(1, 1, 1),
-    drop: new T.CylinderGeometry(0.55, 0.95, 1.0, 14),
+    drop: new T.CylinderGeometry(0.55, 0.95, 1.0, 10),
 };
 // Candy cane: a tube along a hook
 {

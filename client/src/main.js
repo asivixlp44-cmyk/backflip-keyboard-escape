@@ -9,7 +9,7 @@ import * as BX from './bloxity.js';
 import { createAvatar, loadBase, packAvatar, unpackAvatar, avatarStats } from './avatar.js';
 import { updateMaterials } from './textures.js';
 import { pad, pollGamepad, rumble, onGamepadConnection } from './gamepad.js';
-import { render, setSpeedLines, updateFx, dust, sparkleColumn, ring, fireworks, setQuality, flipBurst, shoeFx, makeTrail, flame, updateAmbient } from './fx.js';
+import { render, setSpeedLines, updateFx, dust, sparkleColumn, ring, fireworks, setQuality, getQuality, autoQualityAllowed, flipBurst, shoeFx, makeTrail, flame, updateAmbient } from './fx.js';
 import {
     buildWorld, SPAWN, refreshShop, renderBoards, updateLobbySigns, updateWorld, cullZones, checkpoints, windAt, treadOwned, stageStart,
 } from './world.js';
@@ -973,10 +973,26 @@ function update(dt) {
 // Boot
 // =====================================================================================
 let lastFrame = 0, loadingSignaled = false, fpsAcc = 0, fpsFrames = 0, showFps = false;
+// Slow PC? After joining, if the game keeps running under ~40 FPS for 3 s (and the tab is visible),
+// step the graphics down one level (High -> Medium -> Low). It never steps back up, and it stops
+// for good once the player picks a quality themselves.
+let fpsWatch = { t: 0, low: 0 };
+function watchFps(fps) {
+    if (!running || document.hidden || !autoQualityAllowed()) return;
+    fpsWatch.t += 0.5;
+    if (fpsWatch.t < 4) return;                                  // let the world settle after joining
+    fpsWatch.low = fps < 40 ? fpsWatch.low + 0.5 : 0;
+    if (fpsWatch.low < 3) return;
+    fpsWatch.low = 0;
+    const next = { high: 'medium', medium: 'low' }[getQuality()];
+    if (!next) return;
+    setQuality(next, true);
+    toast('⚙️ Graphics set to ' + (next === 'medium' ? 'Medium' : 'Low') + ' for smoother play', '#7de8ff');
+}
 function frame(now) {
     const dt = Math.min(0.05, (now - (lastFrame || now)) / 1000);
     fpsAcc += (now - (lastFrame || now)) / 1000; fpsFrames++;
-    if (fpsAcc >= 0.5) { if (showFps) $('#fps').textContent = Math.round(fpsFrames / fpsAcc) + ' FPS'; fpsAcc = 0; fpsFrames = 0; }
+    if (fpsAcc >= 0.5) { if (showFps) $('#fps').textContent = Math.round(fpsFrames / fpsAcc) + ' FPS'; watchFps(fpsFrames / fpsAcc); fpsAcc = 0; fpsFrames = 0; }
     lastFrame = now;
     if (!loadingSignaled) { loadingSignaled = true; BX.triggerAllSettings(); }
     pollGamepad();
@@ -1072,7 +1088,7 @@ function wirePortalSettings() {
     const pct = (v) => { const n = parseFloat(String(v)); if (!isFinite(n)) return undefined; return clamp(n > 1 ? n / 100 : n, 0, 1); };
     BX.listenSetting('master_volume', embedded((v) => { const p = pct(v); if (p !== undefined) setVolume('master', p); }));
     BX.listenSetting('music_volume', embedded((v) => { const p = pct(v); if (p !== undefined) setVolume('music', p); }));
-    BX.listenSetting('graphics_quality', embedded((v) => setQuality(v === 'Low' ? 'low' : v === 'Medium' ? 'medium' : 'high')));
+    BX.listenSetting('graphics_quality', embedded((v) => setQuality(v === 'Low' ? 'low' : v === 'Medium' ? 'medium' : 'high', true)));
     BX.listenSetting('camera_sensitivity', embedded((v) => { camSens = clamp(parseFloat(v) || 1, 0.1, 5); }));
     BX.listenSetting('show_fps', (v) => { showFps = v === 'true'; $('#fps').hidden = !showFps; });
 }

@@ -47,7 +47,7 @@ export const KEYCAP = keycapGeometry([[-KEY.h, 1.86, 0.52], [-0.3, 1.7, 0.46], [
 // rectangle swept through rings from a skirt hidden in the case up a gently curved side to a rounded
 // top edge, then a shallow spherical dish across the top.
 function tallKeyGeometry() {
-    const SEG = 5;                                        // segments per rounded corner
+    const SEG = 2;                                        // segments per rounded corner (kept low: thousands of keys)
     const outline = (a, r) => {
         const pts = [];
         const corners = [[a - r, a - r, 0], [-(a - r), a - r, 1], [-(a - r), -(a - r), 2], [a - r, -(a - r), 3]];
@@ -58,7 +58,7 @@ function tallKeyGeometry() {
         return pts;
     };
     // [y, half size, corner radius]
-    const rings = [[-2.1, 1.84, 0.44], [-KEY.tallH, 1.83, 0.44], [-1.15, 1.67, 0.42], [-0.6, 1.5, 0.4], [-0.25, 1.4, 0.38], [-0.09, 1.345, 0.37], [-0.018, 1.318, 0.36], [0, 1.3, 0.355]];
+    const rings = [[-KEY.tallH, 1.83, 0.44], [-0.85, 1.6, 0.41], [-0.3, 1.43, 0.38], [-0.07, 1.34, 0.36], [0, 1.3, 0.355]];
     const M = 4 * (SEG + 1);
     const pos = [], idx = [];
     for (const [y, a, r] of rings) for (const [x, z] of outline(a, r)) pos.push(x, y, z);
@@ -67,7 +67,7 @@ function tallKeyGeometry() {
         idx.push(a, c, b, b, c, d);
     }
     // The dish: rings shrinking to the centre, each a little lower
-    const top = rings[rings.length - 1], DISH = 0.07, steps = [0.82, 0.62, 0.42, 0.22];
+    const top = rings[rings.length - 1], DISH = 0.07, steps = [0.6];
     let prev = (rings.length - 1) * M;
     for (const f of steps) {
         const start = pos.length / 3, y = -DISH * (1 - f * f);
@@ -258,8 +258,21 @@ export const randomLetter = (rng) => letterIndex(ALPHA[Math.floor(rng() * ALPHA.
 const m4 = new T.Matrix4(), q0 = new T.Quaternion(), v0 = new T.Vector3(), s0 = new T.Vector3(), c0 = new T.Color();
 const qWall = new T.Quaternion().setFromAxisAngle(new T.Vector3(1, 0, 0), -Math.PI / 2);
 // Builds the instanced meshes; parentFor(zone) gives the group each zone's keys go into
+// Keys are split into CHUNK-stud blocks per batch so the camera only draws the blocks it can see
+const CHUNK = 32;
 export function flushKeys(parentFor) {
+    const chunked = [];
     for (const b of batches.values()) {
+        const groups = new Map(), L = b.list;
+        for (let o = 0; o < L.length; o += 8) {
+            const ck = Math.floor(L[o] / CHUNK) + '|' + Math.floor(L[o + 1] / CHUNK) + '|' + Math.floor(L[o + 2] / CHUNK);
+            let g = groups.get(ck);
+            if (!g) { g = []; groups.set(ck, g); }
+            for (let j = 0; j < 8; j++) g.push(L[o + j]);
+        }
+        for (const list of groups.values()) chunked.push({ ...b, list });
+    }
+    for (const b of chunked) {
         const n = b.list.length / 8;
         if (!n) continue;
         const geo = b.tall ? KEYCAP_TALL : KEYCAP;

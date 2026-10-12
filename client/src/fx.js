@@ -62,8 +62,12 @@ function applyQuality() {
     resizeFx();
 }
 export function getQuality() { return quality; }
-export function setQuality(q) {
+// auto: a step down made by the frame-rate watcher (main.js); anything else is the player's choice
+let autoAllowed = true;
+export const autoQualityAllowed = () => autoAllowed;
+export function setQuality(q, auto) {
     if (!QUALITIES[q]) return;
+    if (!auto && q !== quality) autoAllowed = false;
     quality = q;
     try { localStorage.setItem('bke_quality', q); } catch (e) { /* ignore */ }
     applyQuality();
