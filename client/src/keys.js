@@ -1,11 +1,13 @@
 // Keyboard keycaps, the look of the whole game: glossy plastic keycaps with rounded tops and a
 // letter printed on each, drawn as instanced meshes (thousands of keys, a few draw calls).
-// A keycap's top face is at y = 0 in its own space. Floor keys are the tall sculpted kind from the
-// reference: steep tapered sides, a deep gap to the next key, one key per KEY.pitch (4) studs.
+// A keycap's top face is at y = 0 in its own space. Floor keys are the big sculpted caps from the
+// reference: about as wide as your character, rounded corners, a soft rounded top edge, a shallow
+// dish on top and a thin gap to the next key, one per KEY.tallPitch (6) studs. They don't move:
+// you run smoothly across their tops (the real game has no bump), each one just clicks.
 // Space bars, wall keys and moving hazard keys keep the low flat cap so they match their colliders.
 import { T, scene } from './engine.js';
 
-export const KEY = { pitch: 4, h: 1.0, tallH: 1.6, press: 1.05 };
+export const KEY = { pitch: 4, h: 1.0, tallPitch: 6, tallScale: 1.5, tallH: 1.5 };
 export const LETTERS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789←↑→↓★♥+?!#@&$%✓☺';
 export const letterIndex = (ch) => LETTERS.indexOf(ch);
 const ALPHA = 'QWERTYUIOPASDFGHJKLZXCVBNM';
@@ -40,9 +42,48 @@ function keycapGeometry(rings) {
     return g;
 }
 export const KEYCAP = keycapGeometry([[-KEY.h, 1.86, 0.52], [-0.3, 1.7, 0.46], [-0.1, 1.6, 0.42], [-0.02, 1.53, 0.38], [0, 1.48, 0.36]]);
-// Tall floor key: wide skirt hidden in the case, steep sides, soft rounded shoulder, flat top
-export const KEYCAP_TALL = keycapGeometry([[-2.1, 1.74, 0.5], [-KEY.tallH, 1.72, 0.5], [-1.0, 1.6, 0.46], [-0.42, 1.46, 0.42], [-0.16, 1.37, 0.39], [-0.04, 1.31, 0.37], [0, 1.28, 0.35]]);
-const PRESS_PINK = new T.Color(0xff3fc4);
+// Big sculpted floor key, built in "unit" space (instances are scaled by KEY.tallScale): a rounded
+// rectangle swept through rings from a skirt hidden in the case up a gently curved side to a rounded
+// top edge, then a shallow spherical dish across the top.
+function tallKeyGeometry() {
+    const SEG = 5;                                        // segments per rounded corner
+    const outline = (a, r) => {
+        const pts = [];
+        const corners = [[a - r, a - r, 0], [-(a - r), a - r, 1], [-(a - r), -(a - r), 2], [a - r, -(a - r), 3]];
+        for (const [cx, cz, q] of corners) for (let k = 0; k <= SEG; k++) {
+            const ang = (q + k / SEG) * Math.PI / 2;
+            pts.push([cx + Math.cos(ang) * r, cz + Math.sin(ang) * r]);
+        }
+        return pts;
+    };
+    // [y, half size, corner radius]
+    const rings = [[-1.25, 1.84, 0.44], [-1.0, 1.83, 0.44], [-0.6, 1.66, 0.42], [-0.3, 1.52, 0.4], [-0.12, 1.44, 0.38], [-0.04, 1.395, 0.37], [-0.008, 1.37, 0.36], [0, 1.35, 0.355]];
+    const M = 4 * (SEG + 1);
+    const pos = [], idx = [];
+    for (const [y, a, r] of rings) for (const [x, z] of outline(a, r)) pos.push(x, y, z);
+    for (let i = 0; i < rings.length - 1; i++) for (let k = 0; k < M; k++) {
+        const a = i * M + k, b = i * M + ((k + 1) % M), c = a + M, d = b + M;
+        idx.push(a, c, b, b, c, d);
+    }
+    // The dish: rings shrinking to the centre, each a little lower
+    const top = rings[rings.length - 1], DISH = 0.07, steps = [0.82, 0.62, 0.42, 0.22];
+    let prev = (rings.length - 1) * M;
+    for (const f of steps) {
+        const start = pos.length / 3, y = -DISH * (1 - f * f);
+        for (const [x, z] of outline(top[1] * f, top[2] * f)) pos.push(x, y, z);
+        for (let k = 0; k < M; k++) { const a = prev + k, b = prev + ((k + 1) % M), c = start + k, d = start + ((k + 1) % M); idx.push(a, c, b, b, c, d); }
+        prev = start;
+    }
+    const centre = pos.length / 3; pos.push(0, -DISH, 0);
+    for (let k = 0; k < M; k++) idx.push(prev + k, centre, prev + ((k + 1) % M));
+    const g = new T.BufferGeometry();
+    g.setAttribute('position', new T.Float32BufferAttribute(pos, 3));
+    g.setIndex(idx);
+    g.computeVertexNormals();
+    g.computeBoundingSphere();
+    return g;
+}
+export const KEYCAP_TALL = tallKeyGeometry();
 
 // ----- letter atlas: 8 x 8 white glyphs -----
 const ATLAS = (() => {
@@ -51,7 +92,7 @@ const ATLAS = (() => {
     x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillStyle = '#fff';
     [...LETTERS].forEach((ch, i) => {
         const cx = (i % 8) * C + C / 2, cy = Math.floor(i / 8) * C + C / 2;
-        x.font = `700 ${/[A-Z0-9]/.test(ch) ? 74 : 66}px Fredoka, "Arial Rounded MT Bold", "Segoe UI Symbol", sans-serif`;
+        x.font = /[A-Z0-9]/.test(ch) ? '800 60px Montserrat, "Arial Black", Arial, sans-serif' : '700 58px Fredoka, "Segoe UI Symbol", sans-serif';
         x.fillText(ch, cx, cy + 4);
     });
     const t = new T.CanvasTexture(c);
@@ -65,7 +106,7 @@ export function redrawAtlas() {
     x.clearRect(0, 0, c.width, c.height);
     x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillStyle = '#fff';
     [...LETTERS].forEach((ch, i) => {
-        x.font = `700 ${/[A-Z0-9]/.test(ch) ? 74 : 66}px Fredoka, "Arial Rounded MT Bold", "Segoe UI Symbol", sans-serif`;
+        x.font = /[A-Z0-9]/.test(ch) ? '800 60px Montserrat, "Arial Black", Arial, sans-serif' : '700 58px Fredoka, "Segoe UI Symbol", sans-serif';
         x.fillText(ch, (i % 8) * C + C / 2, Math.floor(i / 8) * C + C / 2 + 4);
     });
     ATLAS.needsUpdate = true;
@@ -117,12 +158,15 @@ export function keyMaterial(ink, glow, rgb) {
 const batches = new Map();
 // Adds one keycap: top centre at (x, top, z); size scales its width / depth (1 = a normal key);
 // letter: index into LETTERS, -1 for none (space bars). wall: the key stands on a wall facing -z.
-export function addKey(zone, look, x, top, z, color, letter, sx, sz, sy, wall) {
-    const tall = !wall && (sx || 1) === 1 && (sz || 1) === 1 && (sy || 1) === 1;
+export function addKey(zone, look, x, top, z, color, letter, sx, sz, sy, wall, tall) {
     const k = zone + '|' + look.ink + '|' + (look.glow ? 1 : 0) + '|' + (look.rgb ? 1 : 0) + '|' + (wall ? 'w' : tall ? 't' : 'f');
     let b = batches.get(k);
     if (!b) { b = { zone, look, wall: !!wall, tall, list: [] }; batches.set(k, b); }
     b.list.push(x, top, z, sx || 1, sy || 1, sz || 1, color, letter ?? -1);
+}
+// A big sculpted floor key (see KEYCAP_TALL); sx / sz stretch it a little to fill an area exactly
+export function addTallKey(zone, look, x, top, z, color, letter, sx, sz) {
+    addKey(zone, look, x, top, z, color, letter, sx ?? KEY.tallScale, sz ?? KEY.tallScale, KEY.tallScale, false, true);
 }
 // A key set into a wall facing -z (the giant keyboard on the end walls): face at zFace
 export function addWallKey(zone, look, x, y, zFace, color, letter, size) {
@@ -155,50 +199,29 @@ export function keyAt(x, y, z) {
     }
     return best;
 }
-// Press a key (returns true when it wasn't already down). A held key sinks most of the way into the
-// case and turns hot pink; let go and it springs back up with a little bounce.
+// A key under someone's feet: returns true when they just stepped onto it (that's when it clicks)
 export function pressKey(k) {
     if (!k) return false;
-    const fresh = !pressed.has(k) || k.t <= 0;
+    const fresh = !pressed.has(k);
     k.t = 0.12;
     pressed.add(k);
     return fresh;
 }
-// How far a key is pushed down right now (what the player standing on it sinks by)
-export const keyDepth = (k) => (k && k.depth > 0 ? k.depth : 0);
 export function updatePressed(dt) {
-    for (const k of pressed) {
-        k.t -= dt;
-        const target = k.t > 0 ? k.dmax : 0;
-        // Stiff spring: snaps down in ~0.06 s, back up in ~0.12 s with a small overshoot
-        const sdt = Math.min(dt, 1 / 30);
-        k.v += (target - k.depth) * 1400 * sdt;
-        k.v *= Math.exp(-(k.t > 0 ? 55 : 30) * sdt);
-        k.depth = Math.min(k.dmax, k.depth + k.v * sdt);
-        if (k.depth >= k.dmax) k.v = Math.min(0, k.v);
-        if (k.t < -0.6 && Math.abs(k.depth) < 0.004 && Math.abs(k.v) < 0.05) { k.depth = 0; k.v = 0; pressed.delete(k); }
-        m4.compose(v0.set(k.x, k.top - k.depth, k.z), q0, s0.set(k.sx, k.sy, k.sz));
-        k.mesh.setMatrixAt(k.i, m4);
-        k.mesh.instanceMatrix.addUpdateRange(k.i * 16, 16);
-        k.mesh.instanceMatrix.needsUpdate = true;
-        if (k.mesh.instanceColor) {
-            c0.copy(k.c).lerp(PRESS_PINK, Math.min(1, Math.max(0, k.depth / k.dmax)) * 0.9);
-            k.mesh.setColorAt(k.i, c0);
-            k.mesh.instanceColor.addUpdateRange(k.i * 3, 3);
-            k.mesh.instanceColor.needsUpdate = true;
-        }
-    }
+    for (const k of pressed) { k.t -= dt; if (k.t <= 0) pressed.delete(k); }
 }
-// Fills a w x d area (centre x, z) with keys whose tops are at `top`. pick(i, j, rng) -> colour
+// Fills a w x d area (centre x, z) with big keys whose tops are at `top`, as many as fit at about
+// KEY.tallPitch, each stretched slightly so the rows fill the area edge to edge. pick(i, j, rng) -> colour
 export function keyGrid(zone, look, x, z, w, d, top, rng, pick, opts) {
     opts = opts || {};
-    const pitch = KEY.pitch, nx = Math.max(1, Math.floor(w / pitch)), nz = Math.max(1, Math.floor(d / pitch));
-    const x0 = x - (nx - 1) * pitch / 2, z0 = z - (nz - 1) * pitch / 2;
+    const P = KEY.tallPitch, nx = Math.max(1, Math.round(w / P)), nz = Math.max(1, Math.round(d / P));
+    const px = w / nx, pz = d / nz, sx = KEY.tallScale * px / P, sz = KEY.tallScale * pz / P;
+    const x0 = x - (nx - 1) * px / 2, z0 = z - (nz - 1) * pz / 2;
     for (let j = 0; j < nz; j++) for (let i = 0; i < nx; i++) {
         if (opts.skip && opts.skip(i, j)) continue;
         const color = pick ? pick(i, j, rng) : look.keys[Math.floor(rng() * look.keys.length)];
         const letter = opts.blank ? -1 : randomLetter(rng);
-        addKey(zone, look, x0 + i * pitch, top, z0 + j * pitch, color, letter);
+        addTallKey(zone, look, x0 + i * px, top, z0 + j * pz, color, letter, sx, sz);
     }
 }
 export const randomLetter = (rng) => letterIndex(ALPHA[Math.floor(rng() * ALPHA.length)]);
@@ -218,7 +241,7 @@ export function flushKeys(parentFor) {
             mesh.setMatrixAt(i, m4);
             mesh.setColorAt(i, c0.set(L[o + 6]));
             letters[i] = L[o + 7];
-            if (!b.wall) registerKey({ mesh, i, x: L[o], top: L[o + 1], z: L[o + 2], sx: L[o + 3], sy: L[o + 4], sz: L[o + 5], t: -1, depth: 0, v: 0, dmax: b.tall ? KEY.press : 0.34 * L[o + 4], c: new T.Color(L[o + 6]) });
+            if (!b.wall) registerKey({ x: L[o], top: L[o + 1], z: L[o + 2], sx: b.tall ? L[o + 3] / KEY.tallScale * 1.6 : L[o + 3], sz: b.tall ? L[o + 5] / KEY.tallScale * 1.6 : L[o + 5], t: 0 });
         }
         mesh.geometry = geo.clone();
         mesh.geometry.setAttribute('aLetter', new T.InstancedBufferAttribute(letters, 1));

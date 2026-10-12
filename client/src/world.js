@@ -4,7 +4,7 @@ import {
 } from './engine.js';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { KEY, addKey, addWallKey, keyGrid, flushKeys, randomLetter, letterIndex, dynamicKeys, tickKeys } from './keys.js';
+import { KEY, addKey, addTallKey, addWallKey, keyGrid, flushKeys, randomLetter, letterIndex, dynamicKeys, tickKeys } from './keys.js';
 import { decor, flushDecor, candyModel, buildShoe, buildItem, FROSTING, SCOOPS, PASTELS, TROPHY_GEO, GOLD } from './candy.js';
 import { arrowBeltTexture, chocoRiverTexture, beamTexture, woodTexture, stripeTexture, scrolling } from './textures.js';
 import { emitTread } from './fx.js';
@@ -273,13 +273,13 @@ function buildLobby() {
     const blocked = (x, z) =>
         (x > 23 && z < -31 && z > -100) ||                                // treadmill deck
         (x <= -26 && x >= -74 && z < -34 && z > -102);                   // shoe stand
-    const pitch = KEY.pitch;
-    for (let z = LZ0 + 2; z < LZ1; z += pitch) for (let x = -LX + 2; x < LX; x += pitch) {
+    const pitch = KEY.tallPitch;
+    for (let z = LZ0 + pitch / 2; z < LZ1; z += pitch) for (let x = -LX + pitch / 2; x < LX; x += pitch) {
         if (blocked(x, z)) continue;
         const choc = z < -30;
         const aisle = !choc && Math.abs(x) < 9;
         const look = choc ? LOOK.choco : aisle ? LOOK.aisle : LOOK.plaza;
-        addKey(Z, look, x, 0, z, look.keys[Math.floor(rng() * look.keys.length)], randomLetter(rng));
+        addTallKey(Z, look, x, 0, z, look.keys[Math.floor(rng() * look.keys.length)], randomLetter(rng));
     }
     // Base under the keys (seen in the gaps), and the floor collision
     plainBox(Z, LX * 2, 1.2, LZ1 + 30, 0, -KEY.tallH - 0.6, (LZ1 - 30) / 2, candy(0x5a2a8a, { rough: 0.7 }));
@@ -503,7 +503,6 @@ function buildTreadmills(Z) {
     // Deck
     const x0 = 24, x1 = 82, z0 = -98, z1 = -32;
     roundBox(Z, x1 - x0, 1.2, z1 - z0, (x0 + x1) / 2, 0.6, (z0 + z1) / 2, candy(0x2a1a3a, { rough: 0.45 }), 0.4, { solid: true });
-    keyGrid(Z, LOOK.choco, (x0 + x1) / 2, -40, x1 - x0 - 4, 8, 1.2, rngFrom(5), null, {});
     banner(Z, 'TREADMILLS', ['#ffffff', '#ffb0e8'], 40, new V3(53, 34, -98.2 + 0.2), new V3(0, 0, 1), 'Automatically increases your Speed!');
     TREADMILLS.forEach((def, i) => {
         const cx = g.x0 + i * g.step, cz = g.z, top = g.top;
