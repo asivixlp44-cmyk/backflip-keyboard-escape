@@ -1,6 +1,6 @@
 // Candy decorations (donuts, ice creams, lollipops, peppermints ...) drawn as instanced meshes,
 // plus the wearable items (wings, halos, crown, jetpack) and the shoe models.
-import { T, V3, scene, candy, mat, NEON_BOOST } from './engine.js';
+import { T, V3, scene, candy, mat, NEON_BOOST, toLambert } from './engine.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { KEYCAP, keyMaterial } from './keys.js';
 import {
@@ -16,10 +16,11 @@ export const PASTELS = [0xff8ad0, 0x8ad8ff, 0xffe08a, 0xb8ff9a, 0xc89aff, 0xffb0
 
 // ----- part library -----
 const G = {
-    torus: new T.TorusGeometry(1, 0.42, 7, 15),
-    frost: new T.TorusGeometry(1, 0.44, 7, 15),
+    // low-poly like the top games: thousands of these are drawn (instanced) at once
+    torus: new T.TorusGeometry(1, 0.42, 6, 12),
+    frost: new T.TorusGeometry(1, 0.44, 6, 12),
     sprinkle: new T.CapsuleGeometry(0.05, 0.22, 1, 4),
-    sphere: new T.SphereGeometry(1, 12, 8),
+    sphere: new T.SphereGeometry(1, 10, 6),
     sphereLo: new T.SphereGeometry(1, 8, 6),
     cone: new T.ConeGeometry(0.88, 2.6, 12, 1, true),
     disc: new T.CylinderGeometry(1, 1, 1, 20),
@@ -50,7 +51,7 @@ const MAT = {
     cookie: (() => { const m = candy(0xffffff, { rough: 0.8 }); m.map = cookieTexture(); return m; })(),
     cookieSide: candy(0xd89a52, { rough: 0.85 }),
     choco: (() => { const m = candy(0xffffff, { rough: 0.35 }); m.map = chocoBarTexture(); m.map.repeat.set(3, 2); return m; })(),
-    foil: new T.MeshStandardMaterial({ color: 0xd8d8e4, roughness: 0.25, metalness: 0.9 }),
+    foil: toLambert({ color: 0xd8d8e4, roughness: 0.25, metalness: 0.9 }),
     paper: candy(0xe8283a, { rough: 0.6 }),
     waffle: (() => { const m = candy(0xffffff, { rough: 0.7 }); m.map = waffleTexture(); m.map.repeat.set(2, 2); return m; })(),
     cane: (() => { const m = candy(0xffffff, { rough: 0.18, clear: true }); m.map = stripeTexture(0xffffff, 0xe8182c, 3); m.map.repeat.set(1, 8); return m; })(),
@@ -234,7 +235,7 @@ function batWings(color, edge) {
     shape.quadraticCurveTo(2.9, 0.6, 3.0, -0.2); shape.quadraticCurveTo(2.4, 0.2, 2.0, -0.6);
     shape.quadraticCurveTo(1.5, -0.1, 1.0, -0.7); shape.quadraticCurveTo(0.7, -0.2, 0, -0.3); shape.lineTo(0, 0);
     const geo = new T.ShapeGeometry(shape);
-    const memM = new T.MeshStandardMaterial({ color, roughness: 0.6, side: T.DoubleSide });
+    const memM = toLambert({ color, roughness: 0.6, side: T.DoubleSide });
     const boneM = mat(edge, { neon: true });
     for (const side of [-1, 1]) {
         const w = new T.Group();
@@ -315,7 +316,7 @@ export function buildItem(def) {
         }
         case 'crown': {
             anchor = 'head';
-            const gold = new T.MeshStandardMaterial({ color: 0xffc828, roughness: 0.25, metalness: 0.8 });
+            const gold = toLambert({ color: 0xffc828, roughness: 0.25, metalness: 0.8 });
             const band = new T.Mesh(new T.CylinderGeometry(0.72, 0.68, 0.42, 16, 1, true), gold);
             band.material.side = T.DoubleSide; g.add(band);
             for (let k = 0; k < 6; k++) {
@@ -332,7 +333,7 @@ export function buildItem(def) {
             for (const sx of [-0.45, 0.45]) {
                 const tank = new T.Mesh(G.disc, [MAT.cookieSide, MAT.cookie, MAT.cookie]);
                 tank.scale.set(0.42, 1.5, 0.42); tank.position.set(sx, 0, -0.1); tank.castShadow = true; g.add(tank);
-                const noz = new T.Mesh(new T.ConeGeometry(0.28, 0.4, 10), new T.MeshStandardMaterial({ color: 0x5a3418, roughness: 0.5 }));
+                const noz = new T.Mesh(new T.ConeGeometry(0.28, 0.4, 10), toLambert({ color: 0x5a3418, roughness: 0.5 }));
                 noz.position.set(sx, -0.95, -0.1); noz.rotation.x = Math.PI; g.add(noz);
                 const choc = new T.Mesh(G.sphereLo, candy(0x5a2e14, { rough: 0.3 }));
                 choc.scale.set(0.42, 0.25, 0.42); choc.position.set(sx, 0.78, -0.1); g.add(choc);
@@ -407,4 +408,4 @@ export const TROPHY_GEO = (() => {
     g.computeVertexNormals();
     return g;
 })();
-export const GOLD = new T.MeshStandardMaterial({ color: 0xffc828, roughness: 0.22, metalness: 0.85, emissive: 0x6a4000, emissiveIntensity: 0.25 });
+export const GOLD = toLambert({ color: 0xffc828, roughness: 0.22, metalness: 0.85, emissive: 0x6a4000, emissiveIntensity: 0.25 });

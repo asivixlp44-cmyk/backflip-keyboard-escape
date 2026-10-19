@@ -1,7 +1,6 @@
 import {
     T, V3, scene, mat, candy, studMaterial, aabb, solids, kills, triggers, tickers,
-    texFrom, billboard, textPlane, textCanvas, camera,
-} from './engine.js';
+    texFrom, billboard, textPlane, textCanvas, camera, toLambert } from './engine.js';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { KEY, addKey, addTallKey, addWallKey, keyGrid, flushKeys, randomLetter, letterIndex, dynamicKeys, tickKeys } from './keys.js';
@@ -13,6 +12,7 @@ import {
     CFG, LOBBY, STAGES, STAGE_W, PAD, CLIMB_X, STUDS_PER_JUMP, SUMMIT, SHOES, TREADMILLS, TREAD_GEO, ITEMS, itemById, shoeById, TRAILS,
     fmt, clock, rngFrom, eventState, jumpsFor,
 } from '../../shared/config.js';
+import { batchStatic, skinRig } from './batch.js';
 
 const HW = STAGE_W / 2;                 // 24: half the corridor width
 const LX = LOBBY.halfX, LZ0 = LOBBY.z0, LZ1 = LOBBY.z1;
@@ -52,8 +52,43 @@ function addGeo(zone, geo, material, cast) {
     if (!geo.index) { const idx = []; for (let i = 0; i < geo.attributes.position.count; i++) idx.push(i); geo.setIndex(idx); }
     b.list.push(geo);
 }
+// Materials that differ only in colour (or in a tiled texture's repeat) are folded into one
+// vertex-coloured material per zone: a few draw calls per zone instead of one per colour
+const foldMats = new Map();
+function foldMat(m) {
+    const src = m.map ? (m.map.source ? m.map.source.uuid : m.map.uuid) : '';
+    const k = m.type + '|' + src + '|' + m.side;
+    let f = foldMats.get(k);
+    if (!f) {
+        f = m.clone();
+        f.color.set(0xffffff); f.vertexColors = true;
+        if (m.map) { f.map = m.map.clone(); f.map.repeat.set(1, 1); f.map.wrapS = f.map.wrapT = T.RepeatWrapping; f.map.needsUpdate = true; }
+        foldMats.set(k, f);
+    }
+    return f;
+}
+const foldable = (m) => m.userData.fold === true && (m.isMeshLambertMaterial || m.isMeshBasicMaterial) && !m.transparent && !(m.emissive && m.emissive.getHex()) && !(m.map && m.map.rotation);
 function flushGeo() {
+    const folded = new Map();
     for (const b of geoBatches.values()) {
+        const m = b.material;
+        if (!foldable(m) || b.list.some((g) => !g.attributes.uv || !g.attributes.normal)) continue;
+        const k = b.zone + '|' + foldMat(m).uuid + '|' + (b.cast ? 1 : 0);
+        let f = folded.get(k);
+        if (!f) { f = { zone: b.zone, cast: b.cast, material: foldMat(m), list: [] }; folded.set(k, f); }
+        const rep = m.map && (m.map.repeat.x !== 1 || m.map.repeat.y !== 1) ? m.map.repeat : null;
+        for (const g of b.list) {
+            const n = g.attributes.position.count, col = new Float32Array(n * 3);
+            for (let i = 0; i < n; i++) { col[i * 3] = m.color.r; col[i * 3 + 1] = m.color.g; col[i * 3 + 2] = m.color.b; }
+            g.setAttribute('color', new T.BufferAttribute(col, 3));
+            if (rep) { const uv = g.attributes.uv; for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * rep.x, uv.getY(i) * rep.y); }
+            f.list.push(g);
+        }
+        b.list = null;
+    }
+    for (const f of folded.values()) geoBatches.set('fold|' + Math.random(), f);
+    for (const b of geoBatches.values()) {
+        if (!b.list) continue;
         const mesh = new T.Mesh(mergeGeometries(b.list), b.material);
         mesh.receiveShadow = true; mesh.castShadow = !!b.cast;
         mesh.matrixAutoUpdate = false;
@@ -408,7 +443,7 @@ export function renderBoards(msg) {
 function chest(Z, x, z, body, trimC, title, sub, act) {
     const grp = new T.Group(); grp.position.set(x, 0, z); grp.rotation.y = Math.PI + 0.25; zoneGroup(Z).add(grp);
     const add = (geo, m, px, py, pz, rx) => { const o = new T.Mesh(geo, m); o.position.set(px, py, pz); if (rx) o.rotation.x = rx; o.castShadow = true; grp.add(o); return o; };
-    const bodyM = candy(body, { rough: 0.3, clear: true }), trimM = new T.MeshStandardMaterial({ color: trimC, roughness: 0.25, metalness: 0.7 });
+    const bodyM = candy(body, { rough: 0.3, clear: true }), trimM = toLambert({ color: trimC, roughness: 0.25, metalness: 0.7 });
     add(new RoundedBoxGeometry(8, 4.6, 5.4, 2, 0.5), bodyM, 0, 2.3, 0);
     add(new RoundedBoxGeometry(8.2, 2.4, 5.6, 2, 0.6), bodyM, 0, 5.4, -0.3, -0.18);
     for (const sx of [-2.8, 0, 2.8]) add(new T.BoxGeometry(0.6, 4.8, 5.6), trimM, sx, 2.4, 0);
@@ -507,7 +542,7 @@ function buildTreadmills(Z) {
     banner(Z, 'TREADMILLS', ['#ffffff', '#ffb0e8'], 40, new V3(53, 34, -98.2 + 0.2), new V3(0, 0, 1), 'Automatically increases your Speed!');
     TREADMILLS.forEach((def, i) => {
         const cx = g.x0 + i * g.step, cz = g.z, top = g.top;
-        const beltMat = new T.MeshStandardMaterial({ map: beltTex, roughness: 0.6 });
+        const beltMat = toLambert({ map: beltTex, roughness: 0.6 });
         const belt = new T.Mesh(new T.BoxGeometry(g.width, 0.3, g.len), beltMat);
         belt.position.set(cx, top + 0.15, cz); belt.receiveShadow = true; zoneGroup(Z).add(belt);
         const c = solid(Z, cx, top + 0.15, cz, g.width, 0.3, g.len, { tread: def });
@@ -781,7 +816,7 @@ function conveyor(Z, x, z, w, d, top, push, look) {
     tex.center.set(0.5, 0.5);
     tex.rotation = Math.atan2(push.x, -push.z);
     tex.repeat.set(w / 6, d / 6);
-    const m = new T.MeshStandardMaterial({ map: tex, roughness: 0.45 });
+    const m = toLambert({ map: tex, roughness: 0.45 });
     const belt = new T.Mesh(new T.BoxGeometry(w, 1, d), [candy(shade(look.case, 0.6)), candy(shade(look.case, 0.6)), m, candy(shade(look.case, 0.6)), candy(shade(look.case, 0.6)), candy(shade(look.case, 0.6))]);
     belt.position.set(x, top - 0.5, z); belt.receiveShadow = true;
     zoneGroup(Z).add(belt);
@@ -1013,7 +1048,7 @@ function checkpoint(Z, s, k, x, y, z) {
     checkpoints[s.i][k] = new V3(x, y + 0.5, z);
     const pole = new T.Mesh(new T.CylinderGeometry(0.22, 0.22, 7, 8), candy(0xffffff, { rough: 0.3 }));
     pole.position.set(x + 7, y + 3.5, z); zoneGroup(Z).add(pole);
-    const flag = new T.Mesh(new T.PlaneGeometry(3, 2), new T.MeshStandardMaterial({ color: s.theme.accent, side: T.DoubleSide, roughness: 0.5, emissive: s.theme.accent, emissiveIntensity: 0.25 }));
+    const flag = new T.Mesh(new T.PlaneGeometry(3, 2), toLambert({ color: s.theme.accent, side: T.DoubleSide, roughness: 0.5, emissive: s.theme.accent, emissiveIntensity: 0.25 }));
     flag.position.set(x + 8.5, y + 6, z); zoneGroup(Z).add(flag);
     tickers.push((dt, t) => { if (zoneGroup(Z).visible) flag.rotation.y = Math.sin(t * 3 + z) * 0.3; });
     const tr = aabb(x, y + 3, z, STAGE_W, 8, 6); tr.zone = Z;
@@ -1083,7 +1118,7 @@ const SEC = {
         const { Z, th, a, b, d } = c;
         const low = Math.min(c.hA, c.hB) - 4;
         const tex = chocoRiverTexture().clone(); tex.needsUpdate = true; tex.repeat.set(4, (b - a) / 12);
-        const river = new T.Mesh(new T.PlaneGeometry(STAGE_W, b - a + 4), new T.MeshStandardMaterial({ map: tex, roughness: 0.35, metalness: 0.05 }));
+        const river = new T.Mesh(new T.PlaneGeometry(STAGE_W, b - a + 4), toLambert({ map: tex, roughness: 0.35, metalness: 0.05 }));
         river.rotation.x = -Math.PI / 2; river.position.set(0, low, (a + b) / 2); zoneGroup(Z).add(river);
         scrolling.push({ tex, u: 0, v: -0.25 });
         const k = killBox(Z, 'chocolate'); k.min.set(-HW, low - 12, a - 2); k.max.set(HW, low + 0.4, b + 2); k.active = true;
@@ -1390,6 +1425,8 @@ export function buildWorld() {
     refreshShop();
     drawEventBoard();
     cullZones(-1);
+    // every box that never moves drawn together with the others that look the same
+    batchStatic(scene);
 }
 // Facing a stage's wall from its climbing lane (for the Teleport menu and Auto Train)
 export function stageStart(i) {

@@ -6,7 +6,7 @@
 // (they keep their colour) and you walk along at that pressed level, so running across the keyboard
 // is smooth: the next key is already going down as you reach it, the last one pops back up behind.
 // Space bars, wall keys and moving hazard keys keep the low flat cap so they match their colliders.
-import { T, scene } from './engine.js';
+import { T, scene, toLambert } from './engine.js';
 
 export const KEY = { pitch: 4, h: 1.0, tallPitch: 4, tallScale: 1, tallH: 1.7, press: 1.05 };
 export const LETTERS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789←↑→↓★♥+?!#@&$%✓☺';
@@ -120,7 +120,7 @@ const keyMats = new Map();
 export function keyMaterial(ink, glow, rgb) {
     const k = ink + '|' + (glow ? 1 : 0) + '|' + (rgb ? 1 : 0);
     if (keyMats.has(k)) return keyMats.get(k);
-    const m = new T.MeshStandardMaterial({ color: 0xffffff, roughness: 0.5, metalness: 0, envMapIntensity: 0.95 });
+    const m = toLambert({ color: 0xffffff, roughness: 0.5, metalness: 0, envMapIntensity: 0.95 });
     const uInk = { value: new T.Color(ink) }, uGlow = { value: glow ? 1 : 0 }, uRgb = { value: rgb ? 1 : 0 };
     m.onBeforeCompile = (sh) => {
         Object.assign(sh.uniforms, { uAtlas: { value: ATLAS }, uInk, uGlow, uRgb, uTime });

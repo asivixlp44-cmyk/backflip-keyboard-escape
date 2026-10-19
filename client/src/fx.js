@@ -1,91 +1,55 @@
-import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
-import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
-import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
-import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
-import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { T, V3, $, renderer, scene, camera, sun } from './engine.js';
 
 // ----- quality presets -----
+// No post-processing (bloom, colour grade) and no tone mapping, like Bloxity's top games: the scene
+// is drawn straight to the screen. The presets change the resolution and the shadows, and a change
+// never recompiles a shader: shadows stay on in the renderer and Low just stops drawing the shadow
+// map and fades the shadows out.
 const isTouch = matchMedia('(pointer: coarse)').matches || 'ontouchstart' in window;
 export const QUALITIES = {
-    low: { label: 'Low', ratio: 0.85, shadows: false, bloom: false, shadowMap: 512 },
-    medium: { label: 'Medium', ratio: 1, shadows: true, bloom: true, shadowMap: 1024 },
-    high: { label: 'High', ratio: 1.5, shadows: true, bloom: true, shadowMap: 2048 },
+    low: { label: 'Low', ratio: 0.85, shadows: false },
+    medium: { label: 'Medium', ratio: 1, shadows: true },
+    high: { label: 'High', ratio: 1.5, shadows: true },
 };
-let quality = isTouch ? 'medium' : 'high';
-try { quality = localStorage.getItem('bke_quality') || quality; } catch (e) { /* default */ }
-if (!QUALITIES[quality]) quality = 'high';
+let quality = isTouch ? 'low' : 'medium', chosen = false;
+try { const q = localStorage.getItem('bke_quality'); if (q && QUALITIES[q]) { quality = q; chosen = true; } } catch (e) { /* default */ }
 
-// Neon materials are HDR (brighter than 1) so only they cross the bloom threshold;
-// neutral tone mapping keeps every other colour close to its authored sRGB value.
-renderer.toneMapping = T.NeutralToneMapping;
-renderer.toneMappingExposure = 1.02;
+renderer.toneMapping = T.NoToneMapping;
+renderer.toneMappingExposure = 1;
+renderer.shadowMap.enabled = true;
+sun.castShadow = true;
+// a 1024 shadow map at every quality, like the top games
+if (sun.shadow.mapSize.x !== 1024) sun.shadow.mapSize.set(1024, 1024);
 
-// Final grade, after tone mapping: a little more saturation and contrast (the punchy candy look),
-// a soft vignette and a faint pink lift in the shadows
-const GradeShader = {
-    uniforms: { tDiffuse: { value: null }, uSat: { value: 1.16 }, uContrast: { value: 1.06 }, uVignette: { value: 0.24 } },
-    vertexShader: 'varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
-    fragmentShader: `uniform sampler2D tDiffuse; uniform float uSat; uniform float uContrast; uniform float uVignette; varying vec2 vUv;
-        void main() {
-            vec4 c = texture2D(tDiffuse, vUv);
-            float l = dot(c.rgb, vec3(0.2126, 0.7152, 0.0722));
-            vec3 col = mix(vec3(l), c.rgb, uSat);
-            col = (col - 0.5) * uContrast + 0.5;
-            col += vec3(0.035, 0.0, 0.03) * (1.0 - smoothstep(0.0, 0.45, l));
-            vec2 q = vUv - 0.5;
-            col *= 1.0 - uVignette * smoothstep(0.35, 0.85, length(q * vec2(1.0, 0.85)) * 1.25);
-            gl_FragColor = vec4(clamp(col, 0.0, 1.0), c.a);
-        }`,
-};
-
-let composer = null, bloomPass = null;
-function buildComposer() {
-    composer = new EffectComposer(renderer);
-    composer.addPass(new RenderPass(scene, camera));
-    bloomPass = new UnrealBloomPass(new T.Vector2(innerWidth / 2, innerHeight / 2), 0.32, 0.38, 1.85);
-    composer.addPass(bloomPass);
-    composer.addPass(new OutputPass());
-    composer.addPass(new ShaderPass(GradeShader));
-}
+let applied = '';
 function applyQuality() {
     const q = QUALITIES[quality];
+    applied = quality;
     renderer.setPixelRatio(Math.min(devicePixelRatio || 1, q.ratio));
-    renderer.shadowMap.enabled = q.shadows;
-    sun.castShadow = q.shadows;
-    if (sun.shadow.mapSize.x !== q.shadowMap) {
-        sun.shadow.mapSize.set(q.shadowMap, q.shadowMap);
-        if (sun.shadow.map) { sun.shadow.map.dispose(); sun.shadow.map = null; }
-    }
-    scene.traverse((o) => { if (o.material) { const m = Array.isArray(o.material) ? o.material : [o.material]; m.forEach((x) => { x.needsUpdate = true; }); } });
-    if (q.bloom && !composer) buildComposer();
+    sun.shadow.intensity = q.shadows ? 1 : 0;
+    renderer.shadowMap.autoUpdate = q.shadows;
+    renderer.shadowMap.needsUpdate = true; // drawn at least once so the shaders always have a map
     resizeFx();
 }
 export function getQuality() { return quality; }
-// auto: a step down made by the frame-rate watcher (main.js); anything else is the player's choice
-let autoAllowed = true;
-export const autoQualityAllowed = () => autoAllowed;
+// auto: a step down by the frame-rate watcher, never saved
 export function setQuality(q, auto) {
     if (!QUALITIES[q]) return;
-    if (!auto && q !== quality) autoAllowed = false;
+    if (!auto) { chosen = true; try { localStorage.setItem('bke_quality', q); } catch (e) { /* ignore */ } }
     quality = q;
-    try { localStorage.setItem('bke_quality', q); } catch (e) { /* ignore */ }
-    applyQuality();
+    if (applied !== q) applyQuality();
 }
 function resizeFx() {
-    if (composer) {
-        composer.setPixelRatio(renderer.getPixelRatio());
-        composer.setSize(innerWidth, innerHeight);
-        bloomPass.resolution.set(innerWidth / 2, innerHeight / 2);
-    }
     lines.width = Math.round(innerWidth * Math.min(devicePixelRatio || 1, 1.5));
     lines.height = Math.round(innerHeight * Math.min(devicePixelRatio || 1, 1.5));
 }
 addEventListener('resize', resizeFx);
 
+export const autoQualityAllowed = () => !chosen;
+
 export function render() {
-    if (QUALITIES[quality].bloom && composer) composer.render();
-    else renderer.render(scene, camera);
+
+    renderer.render(scene, camera);
 }
 
 // ----- speed lines (2D overlay) -----
@@ -94,7 +58,10 @@ const lctx = lines.getContext('2d');
 const streaks = Array.from({ length: 70 }, () => ({ a: Math.random() * Math.PI * 2, r: Math.random(), l: 0.1 + Math.random() * 0.25, w: 1 + Math.random() * 2.5 }));
 let lineAmt = 0;
 export function setSpeedLines(target, dt) {
+    const was = lineAmt;
     lineAmt += (target - lineAmt) * Math.min(1, dt * 6);
+    // nothing to draw or clear while the lines are off (a full-screen clear every frame costs)
+    if (lineAmt < 0.02 && was < 0.02) return;
     const w = lines.width, h = lines.height;
     lctx.clearRect(0, 0, w, h);
     if (lineAmt < 0.02) return;

@@ -1,5 +1,4 @@
 import * as THREE from 'three';
-import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
 export const T = THREE;
@@ -80,16 +79,11 @@ function resize() {
 addEventListener('resize', resize);
 resize();
 
-// Image-based light from a soft studio room, so the glossy keycaps and candy get gentle
-// reflections on every side; the sun adds direction and soft shadows on top
-{
-    const pm = new T.PMREMGenerator(renderer);
-    scene.environment = pm.fromScene(new RoomEnvironment(), 0.04).texture;
-    scene.environmentIntensity = 0.55;
-    pm.dispose();
-}
-scene.add(new T.HemisphereLight(0xfff0ff, 0x8a6ab8, 0.85));
-export const sun = new T.DirectionalLight(0xfff0e4, 1.5);
+// No environment map or reflections (like Bloxity's top games): matte materials lit by the sky
+// light, a little ambient and the sun
+scene.add(new T.HemisphereLight(0xfff0ff, 0x8a6ab8, 1.1));
+scene.add(new T.AmbientLight(0xffffff, 0.45));
+export const sun = new T.DirectionalLight(0xfff3e0, 1.5);
 sun.castShadow = true;
 sun.shadow.mapSize.set(2048, 2048);
 Object.assign(sun.shadow.camera, { left: -70, right: 70, top: 70, bottom: -70, near: 1, far: 340 });
@@ -102,6 +96,13 @@ scene.add(sun, sun.target);
 export const UNIT = new T.BoxGeometry(1, 1, 1);
 // Neon is pushed well above 1.0 so only it crosses the bloom threshold (fx.js)
 export const NEON_BOOST = 3.0;
+// Matte materials only: PBR settings (roughness, metal, normal maps, environment) are dropped
+const PBR_ONLY = ['roughness', 'metalness', 'roughnessMap', 'metalnessMap', 'normalMap', 'normalScale', 'normalMapType', 'envMap', 'envMapIntensity', 'clearcoat', 'clearcoatRoughness', 'sheen', 'sheenColor', 'sheenRoughness', 'ior', 'transmission', 'thickness', 'iridescence', 'specularIntensity', 'specularColor'];
+export function toLambert(p) {
+    const q = { ...(p || {}) };
+    for (const k of PBR_ONLY) delete q[k];
+    return new T.MeshLambertMaterial(q);
+}
 const matCache = new Map();
 // Plastic-like PBR (Roblox "SmoothPlastic"): a little sheen from the environment, no metal
 export function mat(color, o) {
@@ -109,11 +110,11 @@ export function mat(color, o) {
     const key = color + '|' + (o.neon ? 1 : 0) + '|' + (o.opacity || 1) + '|' + (o.rough ?? '') + '|' + (o.side || 0);
     let m = matCache.get(key);
     if (!m) {
-        m = o.neon ? new T.MeshBasicMaterial({ color }) : new T.MeshStandardMaterial({ color, roughness: o.rough ?? 0.55, metalness: 0 });
-        // Neon is HDR (brighter than 1) so the bloom pass picks it up
+        m = o.neon ? new T.MeshBasicMaterial({ color }) : toLambert({ color, roughness: o.rough ?? 0.55, metalness: 0 });
         if (o.neon) m.color.multiplyScalar(NEON_BOOST * (o.boost ? o.boost / 1.4 : 1));
         if (o.opacity && o.opacity < 1) { m.transparent = true; m.opacity = o.opacity; m.depthWrite = false; }
         if (o.side) m.side = T.DoubleSide;
+        m.userData.fold = true; // a shared colour: the world batcher may bake it into vertex colours
         matCache.set(key, m);
     }
     return m;
@@ -125,10 +126,11 @@ export function candy(color, o) {
     let m = matCache.get(key);
     if (!m) {
         m = o.clear
-            ? new T.MeshPhysicalMaterial({ color, roughness: o.rough ?? 0.18, metalness: 0, clearcoat: 1, clearcoatRoughness: 0.12 })
-            : new T.MeshStandardMaterial({ color, roughness: o.rough ?? 0.22, metalness: 0 });
+            ? toLambert({ color, roughness: o.rough ?? 0.18, metalness: 0, clearcoat: 1, clearcoatRoughness: 0.12 })
+            : toLambert({ color, roughness: o.rough ?? 0.22, metalness: 0 });
         if (o.map) m.map = o.map;
         if (o.emissive) { m.emissive = new T.Color(o.emissive); m.emissiveIntensity = o.emissiveIntensity ?? 0.6; }
+        m.userData.fold = true; // a shared colour: may be folded into vertex colours
         matCache.set(key, m);
     }
     return m;
@@ -185,7 +187,8 @@ export function studMaterial(color, o) {
     if (!m) {
         const map = STUD_TEX.map.clone(), nrm = STUD_TEX.nrm.clone();
         for (const t of [map, nrm]) { t.repeat.set(rx, ry); t.needsUpdate = true; }
-        m = new T.MeshStandardMaterial({ color, map, normalMap: nrm, normalScale: new T.Vector2(0.9, 0.9), roughness: o.rough ?? 0.5, metalness: 0 });
+        m = toLambert({ color, map, normalMap: nrm, normalScale: new T.Vector2(0.9, 0.9), roughness: o.rough ?? 0.5, metalness: 0 });
+        m.userData.fold = true;
         matCache.set(key, m);
     }
     return m;

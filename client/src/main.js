@@ -1,8 +1,7 @@
 import { Client } from '@colyseus/sdk';
 import {
     T, V3, $, canvas, scene, camera, sun, renderer, solids, kills, triggers, prompts, tickers,
-    billboard, buildRig, animRig, airPose, burst, confettiAt, floatText, updateEffects, lerpAngle, updateSky, FOG,
-} from './engine.js';
+    billboard, buildRig, animRig, airPose, burst, confettiAt, floatText, updateEffects, lerpAngle, updateSky, FOG, toLambert } from './engine.js';
 import { S, actions, net } from './state.js';
 import { initAudio, resumeAudio, audioDebug, startMusic, sfx, setVolume, resetFlips, setMusicIntensity, audioSuspended } from './audio.js';
 import * as BX from './bloxity.js';
@@ -80,7 +79,7 @@ function setShoe(g, id) {
     u.shoeId = id || '';
     const d = shoeById[id];
     const shoes = u.body.userData.shoes || [];
-    for (const s of shoes) s.material = new T.MeshStandardMaterial({ color: d ? d.color : 0x141418, roughness: 0.35, emissive: d && d.glow ? d.glow : 0x000000, emissiveIntensity: d && d.glow ? 0.35 : 0 });
+    for (const s of shoes) s.material = toLambert({ color: d ? d.color : 0x141418, roughness: 0.35, emissive: d && d.glow ? d.glow : 0x000000, emissiveIntensity: d && d.glow ? 0.35 : 0 });
 }
 function setTrail(g, id) {
     const u = g.userData;
@@ -931,7 +930,7 @@ function update(dt) {
         if (!P.onGround) airPose(u.body, spinning ? 1 : 0);
         else if (P.moving) animRig(u.body, P.animPhase, 0.85);
         else animRig(u.body, 0, 0);
-        if (localAvatar) localAvatar.update(dt, { moving: P.moving && P.onGround, air: !P.onGround, speed: hs, t });
+        if (localAvatar) localAvatar.update(dt, { moving: P.moving && P.onGround, air: !P.onGround, vy: P.vel.y, speed: hs, t });
         setItem(rig, S.item); setShoe(rig, S.shoe); setTrail(rig, S.trail);
         if (u.item) {
             u.item.update(t, !P.onGround);
@@ -955,7 +954,8 @@ function update(dt) {
         P.squashV += (1 - P.squash) * 180 * dt;
         P.squashV *= Math.exp(-12 * dt);
         P.squash = clamp(P.squash + P.squashV * dt, 0.7, 1.3);
-        rig.scale.set(1 / Math.sqrt(P.squash), P.squash, 1 / Math.sqrt(P.squash));
+        const sq = localAvatar ? 1 : P.squash; // the Bloxity avatar crouches on landing by itself
+    rig.scale.set(1 / Math.sqrt(sq), sq, 1 / Math.sqrt(sq));
         rig.visible = !P.dead && (P.shield <= 0 || Math.floor(t * 12) % 2 === 0);
         setSpeedLines(!P.dead && P.moving && hs > 70 && !reduceMotion ? 0.5 : 0, dt);
     }
@@ -972,7 +972,7 @@ function update(dt) {
 // =====================================================================================
 // Boot
 // =====================================================================================
-let lastFrame = 0, loadingSignaled = false, fpsAcc = 0, fpsFrames = 0, showFps = false;
+let frameErrors = 0, lastFrame = 0, loadingSignaled = false, fpsAcc = 0, fpsFrames = 0, showFps = false;
 // Slow PC? After joining, if the game keeps running under ~40 FPS for 3 s (and the tab is visible),
 // step the graphics down one level (High -> Medium -> Low). It never steps back up, and it stops
 // for good once the player picks a quality themselves.
@@ -995,12 +995,15 @@ function frame(now) {
     if (fpsAcc >= 0.5) { if (showFps) $('#fps').textContent = Math.round(fpsFrames / fpsAcc) + ' FPS'; watchFps(fpsFrames / fpsAcc); fpsAcc = 0; fpsFrames = 0; }
     lastFrame = now;
     if (!loadingSignaled) { loadingSignaled = true; BX.triggerAllSettings(); }
-    pollGamepad();
-    padButtons();
-    if (running) update(dt);
-    else { for (const fn of tickers) fn(dt, now / 1000); updateWorld(dt, -1); }
-    updateCamera(dt);
-    render();
+    // one bad frame (a broken avatar item, say) must never stop the game: log it and keep going
+    try {
+        pollGamepad();
+        padButtons();
+        if (running) update(dt);
+        else { for (const fn of tickers) fn(dt, now / 1000); updateWorld(dt, -1); }
+        updateCamera(dt);
+        render();
+    } catch (e) { if (frameErrors++ < 5) console.error('frame error', e); }
     requestAnimationFrame(frame);
 }
 
